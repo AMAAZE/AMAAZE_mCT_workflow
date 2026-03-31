@@ -1,0 +1,23 @@
+DATASET: CT_1_synthetic
+
+Description:
+This dataset is a synthetic (simulated) CT volume used for testing and validation of the mCT processing workflow. It is not derived from real scan data.
+
+Structure:
+- The dataset contains a full synthetic scan with multiple specimens arranged in a grid.
+- All tiers are present and correctly represented.
+- The layout reflects the true structure of the synthetic scan.
+
+Purpose:
+- Used to test the full pipeline (EX0–EX7) in a controlled environment.
+- Provides known ground truth for validating segmentation, extraction, and mesh generation.
+- Includes reference meshes for comparison.
+
+Key Files:
+- layout_CT_1_synthetic.csv → layout describing specimen positions
+- user_inputs_synthetic.json → configuration used to run this dataset
+- ground_truth_meshes/ → reference meshes for validation
+
+Notes:
+- This dataset is complete and self-consistent.
+- No modifications to tiers or layout have been made.
