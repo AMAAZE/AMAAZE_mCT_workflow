@@ -131,11 +131,13 @@ for i in range(info.shape[0]):
 stop = timeit.default_timer()
 print("subvol extraction runtime: ", stop - start)
 
+print(transpose_preview)
 print("starting DICOM surfacing")
 dicom.surface_bones_parallel(
     outpath,
     iso=ISOLEVEL,
     write_gif=False,
+    mirror=transpose_preview,
     ncores=surface_num_cores
 )
 

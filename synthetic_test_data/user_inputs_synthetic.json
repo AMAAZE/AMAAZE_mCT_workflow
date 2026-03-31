@@ -1,8 +1,8 @@
 {
-  "scanpath": "./test_data/CT_1_synthetic_data",
-  "slicepath": "./test_data/CT_1_synthetic_data/CT_1_synthetic_slices",
+  "scanpath": "./synthetic_test_data",
+  "slicepath": "./synthetic_test_data/CT_1_synthetic_slices",
   "scan_num": 1,
-  "layoutfile": "./test_data/CT_1_synthetic_data/layout_CT_1_synthetic.csv",
+  "layoutfile": "./synthetic_test_data/layout_CT_1_synthetic.csv",
   "n_dividers_row": 2,
   "n_dividers_col": 2,
   "row_dividers_override": [75, 150],
