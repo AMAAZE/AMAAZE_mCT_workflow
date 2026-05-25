@@ -7,4 +7,3 @@ scikit-image
 pydicom
 joblib
 npy-append-array
-AMAAZETools

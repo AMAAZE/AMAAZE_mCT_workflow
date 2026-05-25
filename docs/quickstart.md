@@ -1,47 +1,61 @@
 # Quick Start
 
-This guide walks you through setting up your environment and running the AMAAZE mCT workflow.
+This document provides a quick-reference setup guide for running the AMAAZE microCT surfacing workflow.
 
 ---
 
-## 1. Navigate to the Project
+## 1. Navigate to the Workspace
 
-Open a terminal and move to the project root directory:
+Open a terminal and navigate to `AMAAZE_mCT_workspace/`.
+
+### Linux
 
 ```bash
-cd /path/to/ProjectRoot
+cd /path/to/AMAAZE_mCT_workspace
+```
+
+### Windows (Command Prompt or PowerShell)
+
+```bash
+cd C:\path\to\AMAAZE_mCT_workspace
 ```
 
 ---
 
-## 2. Create and Activate a Virtual Environment
+## 2. Activate the Virtual Environment
 
-### macOS / Linux
+### Linux
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
 ```
 
 ### Windows (Command Prompt or PowerShell)
 
 ```bash
-python -m venv .venv
 .venv\Scripts\activate
 ```
 
 ---
 
-## 3. Install Dependencies
+## 3. Navigate to the Workflow Repository
+
+```bash
+cd AMAAZE_mCT_workflow
+```
+---
+
+## 4. Install Dependencies
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python -m pip install -e ../AMAAZETools
 ```
 
 ---
 
-## 4. Verify Installation
+## 5. Verify Installation
 
 ```bash
 python -c "import numpy, pandas, scipy, matplotlib, skimage, cv2, pydicom, joblib; print('core imports ok')"
@@ -52,24 +66,24 @@ python -c "import json; json.load(open('user_inputs.json')); print('user_inputs.
 
 ---
 
-## 5. Prepare Your Inputs
+## 6. Prepare Your Inputs
 
 Before running the workflow, confirm:
 
-- Your CT slices (`.tif`) are in the folder specified by `slicepath` in `user_inputs.json`
-- Your layout `.csv` is correctly referenced in `layoutfile` in `user_inputs.json`
-- Your configuration file (`user_inputs.json`) is complete and accurate
+- Copy the example `user_inputs.json` into the appropriate project or dataset directory inside `datasets/`
+- Rename and update the copied configuration file for the current dataset
+- Confirm that `slicepath` and `layoutfile` point to the correct project files
 
 ---
 
-## 6. Run the Workflow
+## 7. Run the Workflow
 
 ```bash
-python 01_set_rotation_crop.py --config user_inputs.json
-python 02_build_volume.py --config user_inputs.json
-python 03_segment.py --config user_inputs.json
-python 04_surface.py --config user_inputs.json
-python 05_clean_meshes.py --config user_inputs.json
+python 01_set_rotation_crop.py --config ../datasets/project_or_dataset_001/project_or_dataset_001.json
+python 02_build_volume.py --config ../datasets/project_or_dataset_001/project_or_dataset_001.json
+python 03_segment.py --config ../datasets/project_or_dataset_001/project_or_dataset_001.json
+python 04_surface.py --config ../datasets/project_or_dataset_001/project_or_dataset_001.json
+python 05_clean_meshes.py --config ../datasets/project_or_dataset_001/project_or_dataset_001.json
 ```
 
 Optional steps:
@@ -81,20 +95,22 @@ python 07_build_contact_sheet.py --config user_inputs.json
 
 ---
 
-## 7. Daily Use (After Initial Setup)
+## 8. Daily Use (After Initial Setup)
 
-### macOS / Linux
+### Linux
 
 ```bash
-cd /path/to/ProjectRoot
+cd /path/to/AMAAZE_mCT_workspace
 source .venv/bin/activate
+cd AMAAZE_mCT_workflow
 ```
 
 ### Windows
 
 ```bash
-cd C:\path\to\ProjectRoot
+cd C:\path\to\AMAAZE_mCT_workspace
 .venv\Scripts\activate
+cd AMAAZE_mCT_workflow
 ```
 
 ---

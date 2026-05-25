@@ -10,15 +10,15 @@ The workflow is organized as a sequence of steps. Each step produces outputs tha
 
 The workflow follows this progression:
 
-1. Define orientation and crop region  
-2. Build a processed 3D volume  
-3. Segment the scan into tiers and specimen regions  
-4. Extract specimen subvolumes and generate meshes  
-5. Clean meshes for analysis and visualization  
+1. Define orientation and crop region 
+2. Build a processed 3D volume 
+3. Segment the scan into tiers and specimen regions 
+4. Extract specimen subvolumes and generate meshes 
+5. Clean meshes for analysis and visualization 
 
 Optional steps:
-- Render standardized images of meshes  
-- Generate a contact sheet PDF  
+- Render standardized images of meshes 
+- Generate a contact sheet PDF 
 
 ---
 
@@ -56,7 +56,7 @@ Each step depends on outputs from the previous step. Running steps out of order 
 
 ### Step 01 — Orientation and Cropping
 
-**Script:** `01_set_rotation_crop.py`  
+**Script:** `01_set_rotation_crop.py` 
 **Purpose:** Define how the scan should be interpreted.
 
 - Select a representative slice
@@ -73,7 +73,7 @@ This step is interactive and may require multiple runs.
 
 ### Step 02 — Build Volume
 
-**Script:** `02_build_volume.py`  
+**Script:** `02_build_volume.py` 
 **Purpose:** Convert the slice stack into a processed 3D volume.
 
 - Applies orientation and crop from Step 01
@@ -87,7 +87,7 @@ This step is interactive and may require multiple runs.
 
 ### Step 03 — Segmentation
 
-**Script:** `03_segment.py`  
+**Script:** `03_segment.py` 
 **Purpose:** Identify tiers and specimen regions.
 
 - Detects vertical tiers in the scan
@@ -107,7 +107,7 @@ This step includes interactive components:
 
 ### Step 04 — Surface Extraction
 
-**Script:** `04_surface.py`  
+**Script:** `04_surface.py`
 **Purpose:** Extract specimen volumes and generate meshes.
 
 - Reconstructs each specimen from the original slice stack
@@ -124,7 +124,7 @@ This step includes interactive components:
 
 ### Step 05 — Mesh Cleaning
 
-**Script:** `05_clean_meshes.py`  
+**Script:** `05_clean_meshes.py`
 **Purpose:** Improve mesh quality.
 
 - Removes small disconnected components
@@ -137,7 +137,7 @@ This step includes interactive components:
 
 ### Step 06 — Render Views *(Optional)*
 
-**Script:** `06_render_views.py`  
+**Script:** `06_render_views.py`
 **Purpose:** Generate standardized images of each specimen.
 
 - Aligns meshes using PCA
@@ -151,7 +151,7 @@ This step includes interactive components:
 
 ### Step 07 — Contact Sheet *(Optional)*
 
-**Script:** `07_build_contact_sheet.py`  
+**Script:** `07_build_contact_sheet.py`
 **Purpose:** Create a visual summary of all specimens.
 
 - Groups rendered images by specimen
@@ -167,14 +167,14 @@ This step includes interactive components:
 
 ### Orientation Matters
 
-The choices made in Step 01 determine how all downstream steps interpret the scan.  
+The choices made in Step 01 determine how all downstream steps interpret the scan.
 If orientation or cropping is incorrect, segmentation and extraction will also be incorrect.
 
 ---
 
 ### Layout-Driven Segmentation
 
-The workflow uses a layout CSV to map specimen positions.  
+The workflow uses a layout CSV to map specimen positions.
 Segmentation is not purely automatic—it is guided by expected structure.
 
 ---
@@ -193,14 +193,14 @@ These may need adjustment depending on the dataset.
 
 ### Intermediate Outputs Are Reused
 
-Each step saves outputs to disk.  
+Each step saves outputs to disk.
 This allows you to rerun individual steps without restarting the entire workflow.
 
 ---
 
 ## Typical Usage Pattern
 
-1. Configure `user_inputs.json`
+1. Configure a project-specific ` .json`configuration file
 2. Run Step 01 and confirm orientation
 3. Run Step 02–03 and verify segmentation
 4. Adjust parameters if needed
@@ -226,7 +226,7 @@ Within that directory, the workflow creates subfolders such as:
 
 ## Summary
 
-The workflow is sequential, configuration-driven, and interactive at key steps.  
+The workflow is sequential, configuration-driven, and interactive at key steps.
 Correct setup in early stages ensures accurate results in later stages.
 
 
