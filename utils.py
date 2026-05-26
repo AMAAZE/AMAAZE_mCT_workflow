@@ -395,6 +395,29 @@ def robust_thresholds_from_probes(divider_vals, specimen_vals):
     return np.array([t1, t2, t3]).astype(int)
 
 
+def divider_range_from_probes(divider_vals):
+    """Compute divider intensity range from clicked divider values."""
+    divider_vals = np.sort(np.array(divider_vals).astype(int))
+
+    if len(divider_vals) < 3:
+        raise RuntimeError("Need at least 3 divider clicks to compute divider intensity range.")
+
+    divider_low = divider_vals[1]
+    divider_high = divider_vals[-2]
+
+    print("Sorted divider values:", divider_vals.tolist())
+    print(f"Computed divider intensity range: {divider_low} to {divider_high}")
+
+    if not (divider_low < divider_high):
+        raise RuntimeError(
+            "Computed divider intensity range is not ordered correctly. "
+            "Please re-click divider points."
+        )
+
+    return np.array([divider_low, divider_high]).astype(int)
+
+
+
 def get_iso_thresholds_from_voxel_probe(
     slicepath,
     slice_index_fraction,
@@ -448,6 +471,63 @@ def get_iso_thresholds_from_voxel_probe(
 
     return t1t2t3
 
+def get_iso_thresholds_from_image_probe(probe_image, n_clicks=5):
+    """
+    Collect divider/specimen threshold clicks from an already-prepared image.
+
+    This experimental version is for clicking on an image generated from the
+    reduced .npz volume, rather than clicking on the original TIFF stack.
+    """
+
+    display_im = probe_image
+    oriented_im = probe_image
+
+    divider_vals = collect_voxel_probe_clicks(
+        display_im=display_im,
+        oriented_im=oriented_im,
+        ang2rot=0,
+        rowrng=[0, probe_image.shape[0]],
+        colrng=[0, probe_image.shape[1]],
+        n_clicks=n_clicks,
+        label="divider"
+    )
+
+    specimen_vals = collect_voxel_probe_clicks(
+        display_im=display_im,
+        oriented_im=oriented_im,
+        ang2rot=0,
+        rowrng=[0, probe_image.shape[0]],
+        colrng=[0, probe_image.shape[1]],
+        n_clicks=n_clicks,
+        label="specimen"
+    )
+
+    t1t2t3 = robust_thresholds_from_probes(
+        divider_vals=divider_vals,
+        specimen_vals=specimen_vals
+    )
+
+    return t1t2t3
+
+def get_divider_range_from_image_probe(probe_image, n_clicks=5):
+    """
+    Collect divider intensity clicks from an already-prepared image.
+
+    Experimental replacement for T1/T2/T3 threshold selection.
+    Uses only divider material to define the intensity range used for grid detection.
+    """
+
+    divider_vals = collect_voxel_probe_clicks(
+        display_im=probe_image,
+        oriented_im=probe_image,
+        ang2rot=0,
+        rowrng=[0, probe_image.shape[0]],
+        colrng=[0, probe_image.shape[1]],
+        n_clicks=n_clicks,
+        label="divider"
+    )
+
+    return divider_range_from_probes(divider_vals)
 
 def draw_boxes(im, row, col, title=''):
     """Overlay bounding boxes on an image for visual inspection."""
@@ -642,19 +722,51 @@ def update_param(fnumber, str2lookfor, ex, directory='.'):
         file.write(text)
 
 
-def id_cardboard(si, frac_thresh=0.75, t1=37000, t2=39000, t3=41000):
-    """Identify divider regions using intensity tresholding."""
-    x= np.sum((si > t1) * (si < t2), 0).astype(int) - np.sum(si > t3, 0).astype(int)
-    #x[x<0] = 0
+# def id_cardboard(si, frac_thresh=0.75, t1=37000, t2=39000, t3=41000):
+#    """Identify divider regions using intensity tresholding."""
+#    x= np.sum((si > t1) * (si < t2), 0).astype(int) - np.sum(si > t3, 0).astype(int)
+#    #x[x<0] = 0
+#    t4 = np.floor(frac_thresh*x.max())
+#    x[x<t4] = 0
+#    
+#    return x
+
+def id_cardboard(si, frac_thresh=0.75, divider_low=37000, divider_high=39000):
+    """Identify divider regions using a divider intensity range."""
+    # Old T1/T2/T3 logic:
+    # x = np.sum((si > t1) * (si < t2), 0).astype(int) - np.sum(si > t3, 0).astype(int)
+
+    x = np.sum((si >= divider_low) & (si <= divider_high), 0).astype(int)
+
     t4 = np.floor(frac_thresh*x.max())
     x[x<t4] = 0
     
     return x
 
 
-def autorot2(si, frac_thresh=0.75, t1=37000, t2=39000, t3=41000, title=''):
+# def autorot2(si, frac_thresh=0.75, t1=37000, t2=39000, t3=41000, title=''):
+#    """Estimate scan tilt from divider structure and return the rotation and rotated signal."""
+#    x = np.sum((si > t1) * (si < t2), 0).astype(int) - np.sum(si > t3, 0).astype(int)
+#    
+#    x[x < 0] = 0
+#    
+#    t4 = np.floor(frac_thresh * x.max())
+#    
+#    x_thresh = (x > t4).astype(float)
+#    
+#    a = ang_rot(x_thresh, title=title)
+#    xx = rotate(x, a, preserve_range=True)
+#    
+#    xx[xx < t4] = 0
+#    
+#    return a, xx
+
+def autorot2(si, frac_thresh=0.75, divider_low=37000, divider_high=39000, title=''):
     """Estimate scan tilt from divider structure and return the rotation and rotated signal."""
-    x = np.sum((si > t1) * (si < t2), 0).astype(int) - np.sum(si > t3, 0).astype(int)
+    # Old T1/T2/T3 logic:
+    # x = np.sum((si > t1) * (si < t2), 0).astype(int) - np.sum(si > t3, 0).astype(int)
+
+    x = np.sum((si >= divider_low) & (si <= divider_high), 0).astype(int)
     
     x[x < 0] = 0
     
@@ -668,6 +780,7 @@ def autorot2(si, frac_thresh=0.75, t1=37000, t2=39000, t3=41000, title=''):
     xx[xx < t4] = 0
     
     return a, xx
+
 
 # ============================================================
 # FUNCTIONS USED BY 04_surface.py
