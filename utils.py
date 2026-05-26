@@ -125,7 +125,8 @@ if voxel_probe_n_clicks <= 0:
     )
 
 # Optional voxel size setting
-voxel_size_mm = CONFIG.get("voxel_size_mm", None)
+voxel_size_mm = CONFIG.get("voxel_size_mm", None) # voxel_size_mm = in-plane voxel size (X/Y)
+voxel_spacing_mm = CONFIG.get("voxel_spacing_mm", None) # voxel_spacing_mm = slice spacing in Z
 
 if voxel_size_mm is not None:
     try:
@@ -138,6 +139,19 @@ if voxel_size_mm is not None:
     if voxel_size_mm <= 0:
         raise ValueError(
             f"voxel_size_mm must be > 0, got: {voxel_size_mm}"
+        )
+        
+if voxel_spacing_mm is not None:
+    try:
+        voxel_spacing_mm = float(voxel_spacing_mm)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"voxel_spacing_mm must be a number in millimeters, got: {voxel_spacing_mm}"
+        )
+
+    if voxel_spacing_mm <= 0:
+        raise ValueError(
+            f"voxel_spacing_mm must be > 0, got: {voxel_spacing_mm}"
         )
 
 # Optional CPU settings

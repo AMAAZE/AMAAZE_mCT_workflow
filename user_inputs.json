@@ -19,6 +19,7 @@
   "padding": 5,
   "calibration_filename": null,
   "voxel_size_mm": 0.079,
+  "voxel_spacing_mm": null,
   "extract_ncores": null,
   "surface_ncores": null,
   "clean_ncores": null,

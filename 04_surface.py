@@ -65,6 +65,13 @@ dx = get_voxel_size_mm(
     user_voxel_size_mm=voxel_size_mm
 )
 
+if voxel_spacing_mm is None:
+    dz = dx
+    print(f"No voxel_spacing_mm provided; using isotropic spacing dz = dx = {dx} mm")
+else:
+    dz = voxel_spacing_mm
+    print(f"Using voxel_spacing_mm from user_inputs.json: dz = {dz} mm")
+
 tier_ranges, tier_ids = np.unique(info[:, 1:3].astype(int), axis=0, return_inverse=True)
 
 rowrng1 = saveddata["rowrng"]
@@ -123,7 +130,7 @@ for i in range(info.shape[0]):
     plt.imsave(fname + ".png", overview, cmap="gray")
 
     shape_out = IMAGES.shape
-    np.savez_compressed(fname, I=IMAGES, dx=dx, dz=dx)
+    np.savez_compressed(fname, I=IMAGES, dx=dx, dz=dz)
     del IMAGES
     os.remove(fname + ".npy")
     print("finished ", fname, " size: ", shape_out)

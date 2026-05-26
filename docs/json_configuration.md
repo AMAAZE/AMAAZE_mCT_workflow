@@ -1,6 +1,6 @@
 # JSON Configuration
 
-The workflow is controlled by a configuration file (e.g., `user_inputs.json`).  
+The workflow is controlled by a configuration file (e.g., `user_inputs.json`).
 
 Some values define where your data are located, some define orientation and cropping, and others affect segmentation, mesh generation, and performance.
 
@@ -292,18 +292,34 @@ Small positive value (e.g., 5) prevents clipping.
 `voxel_size_mm`
 
 What it controls:
-Physical size of each voxel.
+Physical size of each voxel within the slice plane, in millimeters. This is the X/Y voxel size.
 
 How to choose:
-Use known voxel size or calibration file.
+Use the known in-plane voxel size from the scan metadata or calibration file.
 
-`calibration_filename`
+`voxel_spacing_mm`
 
 What it controls:
-Optional calibration file.
+Physical spacing between slices in the Z direction, in millimeters.
 
 How to choose:
-Leave null if voxel_size_mm is provided.
+Leave as `null` when the scan has isotropic voxels, meaning Z spacing is the same as X/Y voxel size.
+
+Provide a number when the scan has anisotropic voxel dimensions, such as some medical CT/DICOM-derived datasets where slice spacing differs from in-plane pixel size.
+
+Examples:
+
+```json
+"voxel_size_mm": 0.079,
+"voxel_spacing_mm": null
+```
+```json
+"voxel_size_mm": 0.079,
+"voxel_spacing_mm": 0.300
+```
+
+Notes:
+This affects mesh proportions during surfacing. Running the values listed in the examples above illustrates this difference.
 
 ---
 
@@ -398,6 +414,7 @@ If you are new to the workflow, pay closest attention to:
 - `zwindow`
 - `iso`
 - `voxel_size_mm`
+- `voxel_spacing_mm`
 
 These have the largest impact on results.
 
