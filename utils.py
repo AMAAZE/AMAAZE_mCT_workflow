@@ -105,11 +105,11 @@ except KeyError as e:
 # Optional configuration
 
 # Optional divider settings
-row_dividers_override = CONFIG.get("row_dividers_override", None)
-col_dividers_override = CONFIG.get("col_dividers_override", None)
+row_dividers_override = CONFIG.get("row_dividers_override", None) # THIS IS LIKELY LEGACY AND MAY BE DELETABLE
+col_dividers_override = CONFIG.get("col_dividers_override", None) # THIS IS LIKELY LEGACY AND MAY BE DELETABLE
 
 # Optional threshold settings
-iso_thresholds_override = CONFIG.get("iso_thresholds_override", None)
+iso_thresholds_override = CONFIG.get("iso_thresholds_override", None) # WE SEEM TO HAVE TWO ISO SETTINGS IN THE JSON. I'M NOT SURE HOW THEY INTERACT. REVIEW.
 voxel_probe_n_clicks = CONFIG.get("voxel_probe_n_clicks", 5)
 
 try:
@@ -205,12 +205,6 @@ def apply_preview_orientation(im, transpose_preview):
     if transpose_preview:
         im = im.T
     return im
-
-
-def orient_crop(im, rowrng, colrng, transpose_preview):
-    """Apply preview orientation and crop the image to the selected region."""
-    im = apply_preview_orientation(im, transpose_preview)
-    return im[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
 
 
 # ============================================================

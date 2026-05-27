@@ -29,13 +29,20 @@ if colrng is None or len(colrng) != 2:
 if not isinstance(transpose_preview, bool):
     raise RuntimeError("'transpose_preview' must be True or False in user inputs .json file")
 
+# TODO(dev): Generalize input discovery beyond TIFF stacks.
+# Current implementation supports .tif/.tiff image stacks only.
+# Future versions should handle DICOM and other scan formats through
+# an explicit input-loader layer rather than adding ad hoc glob patterns here.
+
 slicepath = os.path.normpath(slicepath)
 
-tif_files = glob.glob(os.path.join(slicepath, "*.tif"))
+tif_files = []
+for ext in ("*.tif", "*.tiff", "*.TIF", "*.TIFF"):
+    tif_files.extend(glob.glob(os.path.join(slicepath, ext)))
 
 # Stop early if the slice folder is wrong or contains no TIFF slices.
 if len(tif_files) == 0:
-    raise RuntimeError("No .tif files found in the specified slice folder.")
+    raise RuntimeError("No .tif or .tiff files found in the specified slice folder.")
 
 # Sort by numeric slice index rather than filename text so non-padded names
 # do not scramble slice order.
@@ -70,10 +77,20 @@ slice_file = tif_files[slice_index]
 I = plt.imread(slice_file)
 
 # Apply preview-only orientation before rotation/cropping for visual alignment.
-imdisp = apply_preview_orientation(I, transpose_preview)
-imdisp = rotate(imdisp, ang2rot, preserve_range=True)
+# NOTE(dev): Transform order matters.
+# 1. transpose_preview aligns TIFF-native orientation with layout orientation.
+# 2. ang2rot rotates the layout-aligned image for display/segmentation.
+# 3. resize=True preserves the full rotated canvas for rectangular scans.
+# 4. rowrng/colrng crop the transformed display-space image.
+imdisp = apply_preview_orientation(I, transpose_preview) 
+imdisp = rotate(imdisp, ang2rot, preserve_range=True, resize=True)
 imdisp = imdisp[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
-        
+
+# TODO(dev): Replace manual JSON crop bounds with click-based crop selection.
+# For now, rowrng and colrng are entered in user_inputs.json.
+# These coordinates are in display space after transpose_preview and ang2rot,
+# not in raw TIFF-native coordinate space.
+
 # Visual check: adjust JSON settings and rerun if needed.  
 plt.imshow(imdisp)
 plt.title(f"Preview slice | rotation={ang2rot}, rows={rowrng}, cols={colrng}")
