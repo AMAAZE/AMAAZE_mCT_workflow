@@ -503,6 +503,16 @@ for i in range(len(tiers)):
 
     Im2 = Im.copy()
     
+    # ============================================================
+    # Tier-specific expected divider counts
+    # ============================================================
+
+    expected_row_dividers = maski.shape[0] - 1
+    expected_col_dividers = maski.shape[1] - 1
+
+    print(f"Tier {i+1} expected row dividers from layout: {expected_row_dividers}")
+    print(f"Tier {i+1} expected col dividers from layout: {expected_col_dividers}")
+    
     # Collapse the divider image into row/column signals.
     #
     # In plain language:
@@ -533,8 +543,8 @@ for i in range(len(tiers)):
         x0 = np.zeros_like(Isum0, dtype=int)
         x1 = np.zeros_like(Isum1, dtype=int)
     elif AUTO_SEG == True: # Automatic segmentation
-        x0 = auto_seg(Isum0, n_dividers_col)
-        x1 = auto_seg(Isum1, n_dividers_row)
+        x0 = auto_seg(Isum0, expected_col_dividers)
+        x1 = auto_seg(Isum1, expected_row_dividers)
     else:
         thresh0 = Im.shape[0] * THRESH0 / 225
         thresh1 = Im.shape[1] * THRESH1 / 225
@@ -596,6 +606,109 @@ for i in range(len(tiers)):
 
     print("tier", i+1, "final i1m (row dividers):", i1m)
     print("tier", i+1, "final i0m (col dividers):", i0m)
+    
+    """
+    ============================================================
+    DEBUG: Tier Divider Proposal
+    ============================================================
+    Purpose:
+    Verify automatic divider detection before user acceptance.
+    Remove or reduce once stable.
+    ============================================================
+    """
+
+    print(f"Tier {i+1} segmentation debug:")
+    print(f"  Im shape: {Im.shape}")
+    print(f"  Proposed row dividers i1m: {i1m}")
+    print(f"  Proposed col dividers i0m: {i0m}")
+    print(f"  Expected row dividers: {expected_row_dividers}")
+    print(f"  Expected col dividers: {expected_col_dividers}")
+    print(f"  AUTO_SEG: {AUTO_SEG}")
+    print(f"  AUTO_ROT: {AUTO_ROT}")
+
+    """
+    ============================================================
+    END DEBUG: Tier Divider Proposal
+    ============================================================
+    """
+    
+    # ============================================================
+    # Per-tier segmentation verification
+    # ============================================================
+
+    plt.figure()
+    plt.title(f"Proposed divider segmentation for tier {i+1}")
+    plt.imshow(Im)
+    
+    for rr in i1m:
+        plt.axhline(rr, color='red', linestyle='--')
+
+    for cc in i0m:
+        plt.axvline(cc, color='blue', linestyle='--')
+
+    plt.xlabel("X coordinate")
+    plt.ylabel("Y coordinate")
+
+    plt.show(block=False)
+
+    accept_seg = input(
+        f"Accept proposed divider segmentation for tier {i+1}? (y/n): "
+    ).strip().lower()
+
+    if accept_seg != "y":
+
+        print(f"Manual divider selection for tier {i+1}")
+
+        i1m = collect_divider_line_clicks(
+            Im,
+            n_lines=expected_row_dividers,
+            axis_label="row"
+        )
+
+        i0m = collect_divider_line_clicks(
+            Im,
+            n_lines=expected_col_dividers,
+            axis_label="col"
+        )
+
+        print("Manual row dividers:", i1m)
+        print("Manual col dividers:", i0m)
+        
+        """
+        ============================================================
+        DEBUG: Manual Divider Correction
+        ============================================================
+        Purpose:
+        Verify user-selected divider coordinates after manual override.
+        Remove or reduce once stable.
+        ============================================================
+        """
+
+        print(f"Tier {i+1} manual correction debug:")
+        print(f"  Manual row dividers i1m: {i1m}")
+        print(f"  Manual col dividers i0m: {i0m}")
+
+        """
+        ============================================================
+        END DEBUG: Manual Divider Correction
+        ============================================================
+        """
+
+        # Show corrected divider overlay
+        plt.figure()
+        plt.title(f"Corrected divider segmentation for tier {i+1}")
+        plt.imshow(Im)
+
+        for rr in i1m:
+            plt.axhline(rr, color='red', linestyle='--')
+
+        for cc in i0m:
+            plt.axvline(cc, color='blue', linestyle='--')
+
+        plt.xlabel("X coordinate")
+        plt.ylabel("Y coordinate")
+
+        plt.show(block=False)
 
     # Show diagnostic row/column signal plots.
     # These help the user see where the workflow thinks dividers are.
@@ -603,6 +716,26 @@ for i in range(len(tiers)):
     # REVIEW:
     # These plots are useful, but the labels may be confusing.
     # Also, their usefulness varies by dataset.
+    
+    """
+    ============================================================
+    DEBUG: Final Divider Coordinates
+    ============================================================
+    Purpose:
+    Confirm final divider coordinates before extraction box generation.
+    Remove or reduce once stable.
+    ============================================================
+    """
+
+    print(f"Tier {i+1} final divider coordinates:")
+    print(f"  Rows: {i1m}")
+    print(f"  Cols: {i0m}")
+
+    """
+    ============================================================
+    END DEBUG: Final Divider Coordinates
+    ============================================================
+    """
 
     plt.figure()
     plt.plot(np.arange(len(Isum0)),Isum0,linewidth=2)
@@ -626,7 +759,7 @@ for i in range(len(tiers)):
 
     print(i, 'n_row_dividers', len(i1m), 'n_col_dividers', len(i0m))
 
-    if len(i1m) < 2 or len(i0m) < 2:
+    if len(i1m) < expected_row_dividers or len(i0m) < expected_col_dividers:
         raise RuntimeError("Automatic segmentation did not find enough row/column dividers for this tier.")
     
     # Estimate spacing between dividers.
@@ -665,6 +798,30 @@ for i in range(len(tiers)):
     # rowcolrng stores:
     # [row_start, row_end, col_start, col_end]
     # for each specimen cell.
+    
+    """
+    ============================================================
+    DEBUG: Extraction Box Construction
+    ============================================================
+    Purpose:
+    Verify divider arrays and layout indexing before
+    row/column extraction boxes are generated.
+    ============================================================
+    """
+    
+    print(f"Tier {i+1} extraction debug:")
+    print(f"  row array length: {len(row)}")
+    print(f"  col array length: {len(col)}")
+    print(f"  rowi max: {rowi.max()}")
+    print(f"  coli max: {coli.max()}")
+    print(f"  row values: {row}")
+    print(f"  col values: {col}")
+    
+    """
+    ============================================================
+    END DEBUG: Extraction Box Construction
+    ============================================================
+    """
 
     rowcolrng = np.vstack((row[rowi],row[rowi+1],col[coli],col[coli+1])).T
     namesi = layouti[maski,None]

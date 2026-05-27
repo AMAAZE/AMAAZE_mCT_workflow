@@ -547,7 +547,55 @@ def draw_boxes(im, row, col, title=''):
         ax.add_patch(rect)
     plt.title(title)
     plt.show()
-    
+
+def collect_divider_line_clicks(image, n_lines, axis_label):
+    """
+    Collect divider line coordinates from user clicks.
+
+    axis_label should be "row" for horizontal dividers
+    or "col" for vertical dividers.
+    """
+
+    fig, ax = plt.subplots()
+    ax.imshow(image, cmap="gray")
+    ax.set_title(f"Click {n_lines} {axis_label} divider lines")
+    ax.set_xlabel("X coordinate")
+    ax.set_ylabel("Y coordinate")
+
+    clicks = []
+
+    def onclick(event):
+        if event.inaxes != ax:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        if len(clicks) >= n_lines:
+            return
+
+        if axis_label == "row":
+            coord = int(round(event.ydata))
+            ax.axhline(coord, color="red", linestyle="--")
+        elif axis_label == "col":
+            coord = int(round(event.xdata))
+            ax.axvline(coord, color="red", linestyle="--")
+        else:
+            raise ValueError("axis_label must be 'row' or 'col'")
+
+        clicks.append(coord)
+        fig.canvas.draw_idle()
+        print(f"{axis_label} divider {len(clicks)}/{n_lines}: {coord}")
+
+    fig.canvas.mpl_connect("button_press_event", onclick)
+    plt.show(block=False)
+    input(f"Press Enter after selecting {n_lines} {axis_label} dividers...")
+
+    if len(clicks) != n_lines:
+        raise RuntimeError(
+            f"Expected {n_lines} {axis_label} divider clicks, got {len(clicks)}."
+        )
+
+    return np.sort(np.array(clicks).astype(int))
+
     
 def ang_rot(im, plot=True, title=''):
     """Estimate a rotation angle that best aligns divider structure in an image."""
