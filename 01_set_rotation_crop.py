@@ -40,6 +40,8 @@ tif_files = []
 for ext in ("*.tif", "*.tiff", "*.TIF", "*.TIFF"):
     tif_files.extend(glob.glob(os.path.join(slicepath, ext)))
 
+tif_files = sorted(set(tif_files))
+
 # Stop early if the slice folder is wrong or contains no TIFF slices.
 if len(tif_files) == 0:
     raise RuntimeError("No .tif or .tiff files found in the specified slice folder.")

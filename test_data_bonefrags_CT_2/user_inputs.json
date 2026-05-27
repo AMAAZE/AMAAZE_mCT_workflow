@@ -2,7 +2,7 @@
   "scanpath": "test_data_bonefrags_CT_2",
   "slicepath": "test_data_bonefrags_CT_2/Slices_cropped",
   "scan_num": 2,
-  "layoutfile": "layout_bone_data_cropped.csv",
+  "layoutfile": "test_data_bonefrags_CT_2/layout_bone_data_cropped.csv",
   "slice_index_fraction": 0.18,
   "rowrng": [0, 5000],
   "colrng": [0, 5000],

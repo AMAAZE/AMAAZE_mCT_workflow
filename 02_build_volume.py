@@ -9,8 +9,10 @@ Refactoring and workflow design: Katrina E. Yezzi-Woodley
 Load all CT slices, apply the rotation and cropping defined in controls.txt,
 and construct a subsampled 3D volume by averaging slices in z-windows.
 
-Each averaged slice is resized to a fixed square resolution (225 × 225),
-and the resulting volume is saved to ct<scan_num>_new.npz for downstream
+Each averaged slice is resized with aspect-ratio preservation,
+using a maximum edge length of 225 pixels for computational efficiency.
+
+The resulting volume is saved to ct<scan_num>_new.npz for downstream
 segmentation and extraction.
 """
 
@@ -24,7 +26,10 @@ if zwindow <= 0:
 if not os.path.isdir(slicepath):
     raise RuntimeError("The provided slicepath does not exist or is not a folder.")
   
-fnames = [f for f in os.listdir(slicepath) if f.lower().endswith('.tif')]
+fnames = [
+    f for f in os.listdir(slicepath)
+    if f.lower().endswith((".tif", ".tiff"))
+]
 
 fnames_with_idx = [(f, extract_index(f)) for f in fnames]
 fnames_with_idx.sort(key=lambda x: x[1])
@@ -35,7 +40,7 @@ indices = [idx for _, idx in fnames_with_idx]
 n_slices = len(fnames)
 
 if n_slices == 0:
-    raise RuntimeError("No .tif files found in the provided slicepath.")   
+    raise RuntimeError("No .tif or .tiff files found in the provided slicepath.")   
     
 controls_fname = os.path.join(scanpath, "controls.txt")
     
@@ -76,25 +81,30 @@ for i in range(n_slices):
     if i%zwindow==(zwindow-1): #last
         m = imstack.min()
         imstack = apply_preview_orientation(imstack, transpose_preview)
-        imstack = rotate(imstack, ang2rot, preserve_range=True, cval=m)
+        imstack = rotate(imstack, ang2rot, preserve_range=True, resize=True, cval=m)
         print(i/n_slices, fnames[i], m)
         imstack = imstack[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy() / zwindow
         
-        imstack = cv.resize(imstack, (225,225)).copy()
+        imstack = resize_preserve_aspect(imstack, max_edge=225)
         
         subsampled.append(imstack)
 
 rem = 0
 if i%zwindow!=(zwindow-1): #fix the end if 'last' cond didn't happen
     imstack = apply_preview_orientation(imstack, transpose_preview)
-    imstack = rotate(imstack, ang2rot, preserve_range=True, cval=imstack.min())
+    imstack = rotate(imstack, ang2rot, preserve_range=True, resize=True, cval=imstack.min())
     imstack = imstack[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy() / ((i % zwindow) + 1)
 
-    imstack = cv.resize(imstack, (225,225)).copy()
+    imstack = resize_preserve_aspect(imstack, max_edge=225)
     subsampled.append(imstack)
     rem = (i%zwindow) +1
 
 outfile = os.path.join(scanpath, f"ct{scan_num}_new.npz")
+
+# NOTE(dev):
+# Reduced volume currently saved with np.savez() and default NumPy dtypes.
+# File size and dtype optimization intentionally deferred until downstream (see utils)
+# downstream geometric and segmentation behavior on rectangular datasets.
     
 np.savez(
     outfile, 
@@ -104,6 +114,7 @@ np.savez(
     ang=ang2rot, 
     origsz=im.shape, 
     remainder=rem,
+    reduced_shape=np.array(subsampled[0].shape),
     transpose_preview=transpose_preview
 )
 

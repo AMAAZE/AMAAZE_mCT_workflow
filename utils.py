@@ -109,7 +109,7 @@ row_dividers_override = CONFIG.get("row_dividers_override", None) # THIS IS LIKE
 col_dividers_override = CONFIG.get("col_dividers_override", None) # THIS IS LIKELY LEGACY AND MAY BE DELETABLE
 
 # Optional threshold settings
-iso_thresholds_override = CONFIG.get("iso_thresholds_override", None) # WE SEEM TO HAVE TWO ISO SETTINGS IN THE JSON. I'M NOT SURE HOW THEY INTERACT. REVIEW.
+iso_thresholds_override = CONFIG.get("iso_thresholds_override", None) # WE SEEM TO HAVE TWO ISO SETTINGS IN THE JSON. I'M NOT SURE HOW THEY INTERACT. REVIEW. THIS IS LIKELY LEGACY.
 voxel_probe_n_clicks = CONFIG.get("voxel_probe_n_clicks", 5)
 
 try:
@@ -211,6 +211,38 @@ def apply_preview_orientation(im, transpose_preview):
 # FUNCTIONS USED BY 02_build_volume.py
 # ============================================================
 
+# NOTE(dev):
+# Aspect-ratio-preserving resize replaces the legacy fixed 225x225 resize.
+# This avoids geometric distortion for rectangular scans while retaining
+# computational reduction for downstream segmentation.
+#
+# IMPORTANT:
+# Downstream scripts must not assume square XY dimensions.
+#
+# Current implementation preserves NumPy default float precision after
+# z-window averaging and stores the reduced volume using np.savez().
+#
+# Future optimization questions:
+# - Should reduced volumes use np.savez_compressed()?
+# - Should imstack be explicitly cast to float32 or uint16?
+# - What downstream effects would dtype reduction have on thresholding,
+#   segmentation stability, marching cubes, and voxel interpretation?
+#
+# These questions should be evaluated empirically before optimization.
+
+def resize_preserve_aspect(im, max_edge=225):
+    h, w = im.shape[:2]
+
+    if h >= w:
+        new_h = max_edge
+        new_w = max(1, round(w * max_edge / h))
+    else:
+        new_w = max_edge
+        new_h = max(1, round(h * max_edge / w))
+
+    return cv.resize(im, (new_w, new_h)).copy()
+
+
 # ============================================================
 # FUNCTIONS USED BY 03_segment.py
 # ============================================================
@@ -218,10 +250,15 @@ def apply_preview_orientation(im, transpose_preview):
 def get_representative_slice_from_fraction(slicepath, slice_index_fraction):
     """Load a representative slice from the stack based on a fractional position."""
     slicepath = os.path.normpath(slicepath)
-    tif_files = glob.glob(os.path.join(slicepath, "*.tif"))
+
+    tif_files = []
+    for ext in ("*.tif", "*.tiff", "*.TIF", "*.TIFF"):
+        tif_files.extend(glob.glob(os.path.join(slicepath, ext)))
+
+    tif_files = sorted(set(tif_files))
 
     if len(tif_files) == 0:
-        raise RuntimeError("No .tif files found in the specified slice folder.")
+        raise RuntimeError("No .tif or .tiff files found in the specified slice folder.")
 
     tif_files_with_idx = [(f, extract_index(f)) for f in tif_files]
     tif_files_with_idx.sort(key=lambda x: x[1])
@@ -244,7 +281,8 @@ def prepare_preview_probe_views(raw_im, transpose_preview, ang2rot, rowrng, colr
     rotated_display = rotate(
         oriented_im,
         ang2rot,
-        preserve_range=True
+        preserve_range=True,
+        resize=True
     )
 
     cropped_display = rotated_display[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
@@ -598,13 +636,20 @@ def ang_rot(im, plot=True, title=''):
     stop = 1
     angs = cat((np.arange(-10, -stop, incr), np.arange(stop, 10, incr)))
 
-    icol,irow = np.meshgrid(np.arange(im.shape[0]), np.arange(im.shape[1]))
-    mask = (
-        (icol-im.shape[1]/2)**2 
-        + (irow-im.shape[0]/2)**2 
-        >= (np.min(im.shape)/2.25)**2
+    n_rows, n_cols = im.shape[:2]
+    irow, icol = np.meshgrid(
+        np.arange(n_rows),
+        np.arange(n_cols),
+        indexing="ij"
     )
-    notmask=mask!=1
+
+    mask = (
+        (icol - n_cols / 2) ** 2
+        + (irow - n_rows / 2) ** 2
+        >= (min(n_rows, n_cols) / 2.25) ** 2
+    )
+    
+    notmask = ~mask
 
     nim = im.copy() - im.min()
     nim = nim/nim.max()
@@ -822,6 +867,63 @@ def autorot2(si, frac_thresh=0.75, divider_low=37000, divider_high=39000, title=
     xx[xx < t4] = 0
     
     return a, xx
+
+
+def collect_divider_line_clicks_free(image, axis_label, title=""):
+    """
+    Collect any number of divider clicks from an image.
+
+    User clicks divider positions directly on the image.
+    Press Enter in the terminal when finished.
+
+    axis_label:
+        "row" -> horizontal divider selection
+        "col" -> vertical divider selection
+    """
+
+    fig, ax = plt.subplots()
+
+    ax.imshow(image, cmap="gray")
+    ax.set_title(title)
+    ax.set_xlabel("X coordinate")
+    ax.set_ylabel("Y coordinate")
+
+    clicks = []
+
+    def onclick(event):
+
+        if event.inaxes != ax:
+            return
+
+        if event.xdata is None or event.ydata is None:
+            return
+
+        if axis_label == "row":
+            coord = int(round(event.ydata))
+            ax.axhline(coord, color="red", linestyle="--")
+
+        elif axis_label == "col":
+            coord = int(round(event.xdata))
+            ax.axvline(coord, color="blue", linestyle="--")
+
+        else:
+            raise ValueError("axis_label must be 'row' or 'col'")
+
+        clicks.append(coord)
+
+        fig.canvas.draw_idle()
+
+        print(f"{axis_label} divider {len(clicks)}: {coord}")
+
+    fig.canvas.mpl_connect("button_press_event", onclick)
+
+    plt.show(block=False)
+
+    input("Press Enter when finished selecting dividers...")
+
+    plt.close(fig)
+
+    return np.sort(np.array(clicks).astype(int))
 
 
 # ============================================================

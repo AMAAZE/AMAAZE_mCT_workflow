@@ -1,17 +1,19 @@
-#!/usr/bin/env python3
-
 """
 03_segment.py
 
 Original processing logic: RileyWilde
 Refactoring and workflow design: Katrina E. Yezzi-Woodley
 
-Load the processed volume and segment it into tiers and individual
-specimen regions using intensity-based thresholds and scan layout information.
+Load the processed volume and segment it into tiers and specimen regions
+using manual divider definition informed by the scan layout.
 
-This step determines vertical tier boundaries, identifies divider structure,
-and computes bounding boxes for each specimen, saving the extraction plan
-to CT<scan_num>.csv for downstream volume extraction and surfacing.
+This step:
+- determines vertical tier boundaries,
+- allows the user to define row/column dividers per tier,
+- computes specimen extraction boxes,
+- and saves the extraction plan to CT<scan_num>.csv
+for downstream extraction and surfacing.
+
 """
 
 # ============================================================
@@ -52,6 +54,20 @@ if not os.path.exists(layoutfile):
 #   ct<scan_num>_segmentation_metadata.json
 # containing tier boundaries, thresholds, divider positions, rotations, etc.
 
+# This block creates and reads ct<scan_num>_params.txt.
+#
+# The file stores segmentation-related settings and user choices
+# between runs, including rotation, divider detection behavior,
+# tier thresholds, and manual overrides.
+#
+# NOTE(dev):
+# This system creates hidden state outside user_inputs.json.
+# It is currently retained for compatibility with the existing
+# workflow and downstream scripts.
+#
+# Future refactor goal:
+# Replace with an explicit structured metadata file.
+
 params_fname = os.path.join(scanpath, f"ct{scan_num}_params.txt")
 if not os.path.exists(params_fname):
     with open(params_fname, 'w') as f:
@@ -89,7 +105,6 @@ AUTO_ROT, AUTO_SEG, INPUT_ROWS, INPUT_COLS, TIER_THRESH, INVERT, THRESH0, THRESH
 # PLOTTING=True means it will show diagnostic plots.
 
 REDO_TIERS=True
-REDO_ISO = True
 PLOTTING = True
 
 # ============================================================
@@ -99,8 +114,11 @@ PLOTTING = True
 # The TIFF filenames are needed later for display and for mapping back to slice indices.
 # The reduced .npz volume is the main object used for tier and divider/cell segmentation.
 
-fnames = glob.glob(os.path.join(slicepath, "*.tif"))
+fnames = []
+for ext in ("*.tif", "*.tiff", "*.TIF", "*.TIFF"):
+    fnames.extend(glob.glob(os.path.join(slicepath, ext)))
 
+fnames = sorted(set(fnames))
 fnames_with_idx = [(f, extract_index(f)) for f in fnames]
 fnames_with_idx.sort(key=lambda x: x[1])
 
@@ -232,8 +250,8 @@ for vvv in vert_pks:
 
 if (TIER_THRESH is None) or (REDO_TIERS is True):
     print(
-        "green are identified vertical peaks - are they ok? \n"
-        "if not, please click new peaks. \n"
+        "green lines are candidate vertical tier-boundary peaks. \n"
+        "Click the final tier boundary positions if the candidates are not correct. \n"
         "# tiers is %1d, # nonempty tiers is %2d \n" % (n_tiers, np.sum(tier_mask))
     )
         
@@ -295,112 +313,6 @@ for i in range(len(ranges)):
 
 I = [x.mean(0) for x in SLICES]
 
-# Show the voxel/intensity distribution of the reduced .npz volume.
-# This helps the user understand what intensity values exist before choosing
-# thresholds.
-
-fig = plt.figure(figsize=(10,4))
-plt.hist(vol.flatten(), bins=500)
-plt.title("voxel value histogram")
-plt.ylabel("frequency")
-plt.xlabel("voxel value")
-
-# ============================================================
-# Choose intensity thresholds for divider/specimen detection
-# ============================================================
-# REVIEW.
-#
-# This chooses T1, T2, and T3.
-#
-# These are not voxel sizes. They are intensity thresholds.
-#
-# They are used later by id_cardboard() or autorot2() to decide which parts
-# of the tier volume look like divider material and which parts look like
-# specimen material.
-#
-# IMPORTANT CURRENT ISSUE:
-# The click-based threshold method currently samples from the original TIFF
-# images, while the divider/cell segmentation later uses the reduced .npz
-# volume. That means thresholds are selected in one representation and applied
-# in another.
-#
-# FIRST EXPERIMENTAL QUESTION:
-# Would threshold selection behave more consistently if the user clicked on
-# a representative image generated from the reduced .npz volume instead?
-
-iso_override = iso_thresholds_override
-
-if iso_override is not None:
-    divider_range = np.array(iso_override).astype(int)
-    print(f"Using ISO threshold override from JSON: {divider_range}")
-
-# elif REDO_ISO:
-#    t1t2t3 = get_iso_thresholds_from_voxel_probe(
-#        slicepath=slicepath,
-#        slice_index_fraction=slice_index_fraction,
-#        transpose_preview=transpose_preview,
-#        ang2rot=ang2rot,
-#        rowrng=rowrng,
-#        colrng=colrng,
-#        n_clicks=voxel_probe_n_clicks
-#    )
-
-elif REDO_ISO:
-    # Experimental change:
-    # Select T1/T2/T3 from the reduced .npz segmentation volume rather than
-    # from the original TIFF stack.
-    #
-    # This keeps threshold selection in the same data representation used by
-    # divider/cell segmentation below.
-
-    slice_index = int(len(fnames) * slice_index_fraction)
-    slice_index = min(slice_index, len(fnames) - 1)
-
-    npz_slice_index = slice_index // zwindow
-    npz_slice_index = max(0, min(npz_slice_index, vol.shape[0] - 1))
-
-    print(f"Using reduced .npz slice {npz_slice_index} for threshold selection.")
-    print(f"This corresponds approximately to TIFF slice index {slice_index}.")
-
-    probe_image = vol[npz_slice_index, :, :]
-
-
-    # ============================================================
-    # DEBUG: Threshold Probe Mapping
-    # ============================================================
-    # Purpose:
-    # Verify that TIFF-space slice selection is mapping correctly
-    # into reduced .npz space before threshold clicking.
-    #
-    # Remove or reduce once stable.
-    # ============================================================
-
-    print("Threshold probe debug:")
-    print(f"  TIFF slice count: {len(fnames)}")
-    print(f"  slice_index_fraction: {slice_index_fraction}")
-    print(f"  selected TIFF slice index: {slice_index}")
-    print(f"  zwindow: {zwindow}")
-    print(f"  reduced .npz volume shape: {vol.shape}")
-    print(f"  selected .npz slice index: {npz_slice_index}")
-    print(f"  probe image shape: {probe_image.shape}")
-    print(f"  probe image min/max: {probe_image.min()} / {probe_image.max()}")
-
-    # ============================================================
-    # END DEBUG: Threshold Probe Mapping
-    # ============================================================
-
-    divider_range = get_divider_range_from_image_probe(
-        probe_image=probe_image,
-        n_clicks=voxel_probe_n_clicks
-    )
-
-    print(f"Final threshold values used for segmentation: {divider_range}")
-
-    update_param(scan_num, "ISO_THRESHOLDS", divider_range.tolist(), directory=scanpath)
-
-else:
-    divider_range = get_parameter(scan_num, "ISO_THRESHOLDS", directory=scanpath)
-
 # This will store the final extraction instructions.
 # At the end of the script, these become CT<scan_num>.csv.
 #
@@ -431,273 +343,49 @@ EXTRACTS = []
 # - and the current logic is hard to interpret.
 
 for i in range(len(tiers)):
-    tier = tiers[i]; # Im = I[i].T
-    si = SLICES[i]
-
-    # Create a divider-detection image for this tier.
-    #
-    # si is the reduced .npz data for this tier.
-    #
-    # AUTO_ROT=True:
-    #   autorot2() tries to estimate rotation of the divider grid and create
-    #   the divider signal.
-    #
-    # AUTO_ROT=False:
-    #   id_cardboard() creates the divider signal without estimating rotation.
-    #
-    # REVIEW:
-    # The names id_cardboard() and autorot2() are not very transparent.
-    # # Also, both depend heavily on whether divider_range correctly captures
-    # the divider material intensity range.
-
-#    if AUTO_ROT:
-#        ''' same params go into id_cardboard:'''
-#        angi,Im = autorot2(
-#            si,
-#            t1=t1t2t3[0],
-#            t2=t1t2t3[1],
-#            t3=t1t2t3[2],
-#            title="rotation for tier "+str(i+1)
-#        )
-#
-#    else:
-#        ''' same params go into autorot2:'''
-#        Im = id_cardboard(
-#            si,
-#            t1=t1t2t3[0],
-#            t2=t1t2t3[1],
-#            t3=t1t2t3[2]
-#        )
-#        angi = 0
-
-    if AUTO_ROT:
-        ''' same params go into id_cardboard:'''
-        angi, Im = autorot2(
-            si,
-            divider_low=divider_range[0],
-            divider_high=divider_range[1],
-            title="rotation for tier " + str(i+1)
-        )
-
-    else:
-        ''' same params go into autorot2:'''
-        Im = id_cardboard(
-            si,
-            divider_low=divider_range[0],
-            divider_high=divider_range[1]
-        )
-        angi = 0
-
-    plt.figure()
-    plt.title("detected dividers for tier "+str(i+1))
-    plt.imshow(Im)
-    plt.axis("off")
-    plt.show(block=False)
-
-    angi = -angi 
+    tier = tiers[i]
+    Im = I[i]
+    angi = 0
 
     maski = mask[i,:,:]
     layouti = scan_layout[i,:,:]
 
-    rowi,coli = np.where(maski)
+    rowi, coli = np.where(maski)
 
-    Im2 = Im.copy()
-    
-    # ============================================================
-    # Tier-specific expected divider counts
-    # ============================================================
+    accepted_grid = False
 
-    expected_row_dividers = maski.shape[0] - 1
-    expected_col_dividers = maski.shape[1] - 1
+    while not accepted_grid:
 
-    print(f"Tier {i+1} expected row dividers from layout: {expected_row_dividers}")
-    print(f"Tier {i+1} expected col dividers from layout: {expected_col_dividers}")
-    
-    # Collapse the divider image into row/column signals.
-    #
-    # In plain language:
-    # - Isum0 helps find column dividers.
-    # - Isum1 helps find row dividers.
-    #
-    # This is the graph-based part of divider/cell segmentation.
-    Isum0 = np.sum(Im,0)
-    Isum1 = np.sum(Im,1)
+        print(f"\nTier {i+1}: manual grid definition")
 
-    # Decide how row/column divider positions will be found.
-    #
-    # Possible paths:
-    # 1. JSON overrides exist:
-    #    Use user-provided divider positions.
-    #
-    # 2. AUTO_SEG=True:
-    #    Try to find divider positions automatically from the row/column signals.
-    #
-    # 3. AUTO_SEG=False:
-    #    Use older threshold logic based on THRESH0 and THRESH1.
-    #
-    # REVIEW:
-    # This is one of the places where old logic, new overrides, and automation
-    # are mixed together.
-    
-    if (row_dividers_override is not None) or (col_dividers_override is not None):
-        x0 = np.zeros_like(Isum0, dtype=int)
-        x1 = np.zeros_like(Isum1, dtype=int)
-    elif AUTO_SEG == True: # Automatic segmentation
-        x0 = auto_seg(Isum0, expected_col_dividers)
-        x1 = auto_seg(Isum1, expected_row_dividers)
-    else:
-        thresh0 = Im.shape[0] * THRESH0 / 225
-        thresh1 = Im.shape[1] * THRESH1 / 225
-
-        x0 = (Isum0 > thresh0).astype(int)
-        x1 = (Isum1 > thresh1).astype(int)
-
-    if x0[0]==1:
-        x0[0]=0
-
-    i0firsts = np.where(x0[0:-1]<x0[1:])[0]
-    i0lasts  = np.where(x0[1:]<x0[0:-1])[0]
-    i1firsts = np.where(x1[0:-1]<x1[1:])[0]
-    i1lasts  = np.where(x1[1:]<x1[0:-1])[0]
-
-    # Optional manual row-divider path.
-    #
-    # This is legacy behavior controlled by params.txt.
-    # It shows diagnostic plots and asks the user to enter row-divider positions.
-    #
-    # REVIEW:
-    # This is separate from the newer image-click threshold selection.
-    # The name INPUT_ROWS is not very descriptive.
-    if INPUT_ROWS: # Click selection manual override
-        plt.figure()
-        plt.imshow(Im)
-
-        plt.figure()
-        plt.plot(Isum1,scalex=5)
-        plt.xticks(np.arange(0,Isum1.shape[0],20))
-        plt.show(block=False)
-        print(find_peaks(Isum1,width=3)[0])
-        i1m = np.array(input('enter peaks, separated only by single spaces: \n').split(' ')).astype(int)
-        update_param(scan_num,'R'+str(i),i1m, directory=scanpath)
-    elif row_dividers_override is not None:
-        i1m = np.round(row_dividers_override).astype(int)
-    else:
-        i1m = np.floor((i1firsts+i1lasts)/2).astype(int)
-
-    # Optional manual column-divider path.
-    #
-    # Same idea as INPUT_ROWS, but for column dividers.
-    #
-    # REVIEW:
-    # This is legacy behavior and should probably be renamed or replaced later.
-    
-    if INPUT_COLS:
-        plt.figure()
-        plt.plot(Isum0,scalex=5)
-        plt.xticks(np.arange(0,Isum1.shape[0],20))
-        plt.show(block=False)
-        print(find_peaks(Isum0,width=3)[0])
-        i0m = np.array(input('enter peaks, separated only by single spaces: \n').split(' ')).astype(int)
-        update_param(scan_num,'C'+str(i),i0m, directory=scanpath)
-    elif col_dividers_override is not None:
-        i0m = np.round(col_dividers_override).astype(int)
-    else:
-        i0m = np.floor((i0firsts+i0lasts)/2).astype(int)
-
-    print("tier", i+1, "final i1m (row dividers):", i1m)
-    print("tier", i+1, "final i0m (col dividers):", i0m)
-    
-    """
-    ============================================================
-    DEBUG: Tier Divider Proposal
-    ============================================================
-    Purpose:
-    Verify automatic divider detection before user acceptance.
-    Remove or reduce once stable.
-    ============================================================
-    """
-
-    print(f"Tier {i+1} segmentation debug:")
-    print(f"  Im shape: {Im.shape}")
-    print(f"  Proposed row dividers i1m: {i1m}")
-    print(f"  Proposed col dividers i0m: {i0m}")
-    print(f"  Expected row dividers: {expected_row_dividers}")
-    print(f"  Expected col dividers: {expected_col_dividers}")
-    print(f"  AUTO_SEG: {AUTO_SEG}")
-    print(f"  AUTO_ROT: {AUTO_ROT}")
-
-    """
-    ============================================================
-    END DEBUG: Tier Divider Proposal
-    ============================================================
-    """
-    
-    # ============================================================
-    # Per-tier segmentation verification
-    # ============================================================
-
-    plt.figure()
-    plt.title(f"Proposed divider segmentation for tier {i+1}")
-    plt.imshow(Im)
-    
-    for rr in i1m:
-        plt.axhline(rr, color='red', linestyle='--')
-
-    for cc in i0m:
-        plt.axvline(cc, color='blue', linestyle='--')
-
-    plt.xlabel("X coordinate")
-    plt.ylabel("Y coordinate")
-
-    plt.show(block=False)
-
-    accept_seg = input(
-        f"Accept proposed divider segmentation for tier {i+1}? (y/n): "
-    ).strip().lower()
-
-    if accept_seg != "y":
-
-        print(f"Manual divider selection for tier {i+1}")
-
-        i1m = collect_divider_line_clicks(
-            Im,
-            n_lines=expected_row_dividers,
-            axis_label="row"
+        print(
+            "Click once on each horizontal row divider.\n"
+            "Press Enter in the terminal when finished."
         )
 
-        i0m = collect_divider_line_clicks(
+        i1m = collect_divider_line_clicks_free(
             Im,
-            n_lines=expected_col_dividers,
-            axis_label="col"
+            axis_label="row",
+            title=f"Tier {i+1}: click row dividers"
         )
 
-        print("Manual row dividers:", i1m)
-        print("Manual col dividers:", i0m)
-        
-        """
-        ============================================================
-        DEBUG: Manual Divider Correction
-        ============================================================
-        Purpose:
-        Verify user-selected divider coordinates after manual override.
-        Remove or reduce once stable.
-        ============================================================
-        """
+        print(
+            "Click once on each vertical column divider.\n"
+            "Press Enter in the terminal when finished."
+        )
 
-        print(f"Tier {i+1} manual correction debug:")
-        print(f"  Manual row dividers i1m: {i1m}")
-        print(f"  Manual col dividers i0m: {i0m}")
+        i0m = collect_divider_line_clicks_free(
+            Im,
+            axis_label="col",
+            title=f"Tier {i+1}: click column dividers"
+        )
 
-        """
-        ============================================================
-        END DEBUG: Manual Divider Correction
-        ============================================================
-        """
+        print(f"Tier {i+1} row divider coordinates: {i1m}")
+        print(f"Tier {i+1} column divider coordinates: {i0m}")
 
-        # Show corrected divider overlay
         plt.figure()
-        plt.title(f"Corrected divider segmentation for tier {i+1}")
-        plt.imshow(Im)
+        plt.title(f"Tier {i+1}: proposed manual grid")
+        plt.imshow(Im, cmap="gray")
 
         for rr in i1m:
             plt.axhline(rr, color='red', linestyle='--')
@@ -710,81 +398,19 @@ for i in range(len(tiers)):
 
         plt.show(block=False)
 
-    # Show diagnostic row/column signal plots.
-    # These help the user see where the workflow thinks dividers are.
-    #
-    # REVIEW:
-    # These plots are useful, but the labels may be confusing.
-    # Also, their usefulness varies by dataset.
-    
-    """
-    ============================================================
-    DEBUG: Final Divider Coordinates
-    ============================================================
-    Purpose:
-    Confirm final divider coordinates before extraction box generation.
-    Remove or reduce once stable.
-    ============================================================
-    """
+        accept_grid = input(
+            f"Accept manual grid for tier {i+1}? (y/n): "
+        ).strip().lower()
 
-    print(f"Tier {i+1} final divider coordinates:")
-    print(f"  Rows: {i1m}")
-    print(f"  Cols: {i0m}")
+        accepted_grid = (accept_grid == "y")
 
-    """
-    ============================================================
-    END DEBUG: Final Divider Coordinates
-    ============================================================
-    """
+    print(f"Tier {i+1} accepted row dividers: {i1m}")
+    print(f"Tier {i+1} accepted column dividers: {i0m}")  
 
-    plt.figure()
-    plt.plot(np.arange(len(Isum0)),Isum0,linewidth=2)
-    ma = 1.1*Isum0.max()
-    for qq in i0lasts:
-        plt.plot([qq,qq], [0,ma],'r')
-
-    plt.title('row segmentation for tier '+str(i+1))
-    plt.xlabel('row'); plt.ylabel('sum along columns')
-    plt.show(block=False)
-
-    plt.figure()
-    plt.plot(np.arange(len(Isum1)),Isum1,linewidth=2)
-    ma = 1.1*Isum1.max()
-    for qq in i1lasts:
-        plt.plot([qq,qq], [0,ma],'r')
-
-    plt.title('column segmentation for tier '+str(i+1))
-    plt.xlabel('column'); plt.ylabel('sum along rows')
-    plt.show(block=False)
-
-    print(i, 'n_row_dividers', len(i1m), 'n_col_dividers', len(i0m))
-
-    if len(i1m) < expected_row_dividers or len(i0m) < expected_col_dividers:
-        raise RuntimeError("Automatic segmentation did not find enough row/column dividers for this tier.")
-    
-    # Estimate spacing between dividers.
-    #
-    # REVIEW:
-    # This is only used if fullboarder is False.
-    # Since fullboarder is currently hard-coded True, this spacing calculation
-    # may not currently affect anything.
-    
-    spacing = 3+np.min([
-        np.min(i1m[1:]-i1m[0:-1]),
-        np.min(i0m[1:]-i0m[0:-1])
-    ])
-
-    fullboarder = True
-    if fullboarder==True:
-        colstart = 0
-        colend = Im.shape[1]-1
-        rowstart = 0
-        rowend = Im.shape[0]-1
-    else:
-        colstart = np.max((0,i0m[0]-spacing))
-        colend   = np.min((Im.shape[1]-1,i0m[-1]+spacing))
-        rowstart = np.max((0,i1m[0]-spacing))
-        rowend   = np.min((Im.shape[0]-1,i1m[-1]+spacing))
+    colstart = 0
+    colend = Im.shape[1]-1
+    rowstart = 0
+    rowend = Im.shape[0]-1
 
     col = np.array( [colstart]+ i0m.tolist() +[colend])
     row = np.array( [rowstart]+ i1m.tolist() +[rowend])
@@ -823,6 +449,18 @@ for i in range(len(tiers)):
     ============================================================
     """
 
+    if rowi.max()+1 >= len(row):
+        raise RuntimeError(
+            f"Tier {i+1}: not enough row dividers were clicked "
+            f"for the occupied layout cells."
+        )
+
+    if coli.max()+1 >= len(col):
+        raise RuntimeError(
+            f"Tier {i+1}: not enough column dividers were clicked "
+            f"for the occupied layout cells."
+        )
+
     rowcolrng = np.vstack((row[rowi],row[rowi+1],col[coli],col[coli+1])).T
     namesi = layouti[maski,None]
 
@@ -842,7 +480,7 @@ for i in range(len(tiers)):
             plt.imread(fnames[slice_idx]),
             transpose_preview
         )
-        imdisp = rotate(imdisp, ang2rot, preserve_range=True)
+        imdisp = rotate(imdisp, ang2rot, preserve_range=True, resize=True)
         imdisp = imdisp[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
         imdisp = rotate(imdisp, angi)
 
@@ -890,8 +528,8 @@ for i in range(len(tiers)):
             )
     )
 
-    if LOCAL_SLICES and PLOTTING :
-        draw_boxes(imdisp,drawrow,drawcol,title = 'segmentation for tier '+str(i+1))
+#     if LOCAL_SLICES and PLOTTING :
+#        draw_boxes(imdisp,drawrow,drawcol,title = 'segmentation for tier '+str(i+1))
 
 E = np.concatenate(EXTRACTS)
 
