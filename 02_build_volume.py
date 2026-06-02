@@ -118,6 +118,33 @@ np.savez(
     transpose_preview=transpose_preview
 )
 
+# ============================================================
+# Update run metadata
+# ============================================================
+
+run_metadata = load_run_metadata(scanpath, scan_num)
+
+run_metadata["workflow"]["02_build_volume"] = {
+    "input_slices": {
+        "n_slices": n_slices,
+        "first_slice": fnames[0],
+        "last_slice": fnames[-1],
+    },
+    "processing": {
+        "zwindow": zwindow,
+        "remainder": rem,
+        "ang2rot": ang2rot,
+        "rowrng": rowrng,
+        "colrng": colrng,
+        "transpose_preview": transpose_preview,
+    },
+    "outputs": {
+        "npz_file": outfile,
+        "reduced_shape": list(np.array(subsampled).shape),
+    },
+}
+
+save_run_metadata(scanpath, scan_num, run_metadata)
 
 
 

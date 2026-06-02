@@ -11,6 +11,10 @@ apply preview orientation, rotation, and crop, and write the selected
 rotation/crop settings to controls.txt for downstream processing.
 """
 
+# ============================================================
+# Configuration and imports
+# ============================================================
+
 from utils import *
 
 
@@ -70,6 +74,22 @@ if indices != expected:
 
 print("First 5 slices:", [os.path.basename(f) for f in tif_files[:5]])
 print("Last 5 slices:", [os.path.basename(f) for f in tif_files[-5:]])
+
+# ============================================================
+# Initialize run metadata
+# ============================================================
+
+run_metadata = init_run_metadata(
+    scanpath=scanpath,
+    scan_num=scan_num,
+    config=CONFIG
+)
+
+run_metadata["workflow"]["01_set_rotation_crop"] = {}
+
+# ============================================================
+# User interface
+# ============================================================
 
 # Choose one representative slice for preview based on the user-provided fraction.
 slice_index = int(len(tif_files) * slice_index_fraction)

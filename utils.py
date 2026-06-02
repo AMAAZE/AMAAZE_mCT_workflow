@@ -187,6 +187,62 @@ hole_tolerance = CONFIG.get("hole_tolerance", 0)
 # Optional processing settings
 allow_slice_gaps = CONFIG.get("allow_slice_gaps", False)
 
+
+# ============================================================
+# Run metadata helpers
+# ============================================================
+
+def get_run_metadata_path(scanpath, scan_num):
+    return os.path.join(scanpath, f"ct{scan_num}_run_metadata.json")
+
+
+def init_run_metadata(scanpath, scan_num, config):
+    """
+    Initialize workflow metadata for a new run.
+    """
+
+    metadata = {
+        "scan_num": scan_num,
+        "user_config_snapshot": config.copy(),
+        "workflow": {},
+        "outputs": {},
+        "warnings": [],
+    }
+
+    save_run_metadata(scanpath, scan_num, metadata)
+
+    return metadata
+
+
+def load_run_metadata(scanpath, scan_num):
+    """
+    Load existing run metadata.
+    """
+
+    metadata_path = get_run_metadata_path(scanpath, scan_num)
+
+    if not os.path.exists(metadata_path):
+        raise RuntimeError(
+            f"Run metadata file not found: {metadata_path}"
+        )
+
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    return metadata
+
+
+def save_run_metadata(scanpath, scan_num, metadata):
+    """
+    Save workflow metadata to disk.
+    """
+
+    metadata_path = get_run_metadata_path(scanpath, scan_num)
+
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
 # ============================================================
 # FUNCTIONS USED BY 01_set_rotation_crop.py
 # ============================================================
@@ -924,6 +980,371 @@ def collect_divider_line_clicks_free(image, axis_label, title=""):
     plt.close(fig)
 
     return np.sort(np.array(clicks).astype(int))
+
+
+def score_axis_coherence(im):
+    """
+    Score how well bright divider-like structure aligns with image rows/columns.
+    Higher score means stronger row/column coherence.
+    """
+
+    im = im.astype(float)
+
+    if im.max() > im.min():
+        im = (im - im.min()) / (im.max() - im.min())
+    else:
+        return 0
+
+    row_profile = im.mean(axis=1)
+    col_profile = im.mean(axis=0)
+
+    row_score = row_profile.max() - row_profile.min()
+    col_score = col_profile.max() - col_profile.min()
+
+    row_sharpness = np.abs(np.diff(row_profile)).max()
+    col_sharpness = np.abs(np.diff(col_profile)).max()
+
+    return row_score + col_score + row_sharpness + col_sharpness
+
+
+def estimate_grid_rotation_by_coherence(im, angle_min=-5, angle_max=5, angle_step=0.25):
+    """
+    Estimate small rotation correction by testing candidate angles and choosing
+    the angle that makes row/column divider structure most coherent.
+    """
+
+    angles = np.arange(angle_min, angle_max + angle_step, angle_step)
+
+    scores = []
+
+    for angle in angles:
+        rotated = rotate(
+            im,
+            angle,
+            preserve_range=True,
+            resize=False,
+            mode="edge"
+        )
+
+        # Ignore border artifacts during scoring.
+        margin_r = max(1, int(rotated.shape[0] * 0.05))
+        margin_c = max(1, int(rotated.shape[1] * 0.05))
+
+        core = rotated[
+            margin_r:rotated.shape[0] - margin_r,
+            margin_c:rotated.shape[1] - margin_c
+        ]
+
+        scores.append(score_axis_coherence(core))
+
+    scores = np.array(scores)
+    best_idx = int(np.argmax(scores))
+    best_angle = float(angles[best_idx])
+
+    return best_angle, angles, scores
+
+
+def get_axis_profile(im, axis_label):
+    """
+    Compute mean intensity profile across rows or columns.
+    axis_label:
+        'row' -> one value per image row
+        'col' -> one value per image column
+    """
+
+    im = im.astype(float)
+
+    if im.max() > im.min():
+        im = (im - im.min()) / (im.max() - im.min())
+
+    if axis_label == "row":
+        return im.mean(axis=1)
+
+    if axis_label == "col":
+        return im.mean(axis=0)
+
+    raise ValueError("axis_label must be 'row' or 'col'")
+
+
+def detect_bright_bands_from_profile(profile, threshold_fraction=0.75, min_band_width=2):
+    """
+    Detect contiguous bright bands from a 1D row/column intensity profile.
+    """
+
+    profile = np.array(profile).astype(float)
+
+    cutoff = profile.min() + threshold_fraction * (profile.max() - profile.min())
+    bright = profile >= cutoff
+
+    bands = []
+    in_band = False
+    start = None
+
+    for i, is_bright in enumerate(bright):
+        if is_bright and not in_band:
+            start = i
+            in_band = True
+
+        if in_band and (not is_bright or i == len(bright) - 1):
+            end = i if not is_bright else i + 1
+
+            if end - start >= min_band_width:
+                bands.append([int(start), int(end)])
+
+            in_band = False
+
+    return bands, cutoff, bright
+
+
+def longest_true_run(mask_1d):
+    """
+    Return the longest consecutive True run in a 1D boolean array.
+    """
+
+    longest = 0
+    current = 0
+
+    for value in mask_1d:
+        if value:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+
+    return longest
+
+
+def bridge_small_gaps(mask_1d, max_gap=3):
+    """
+    Fill short False gaps between True regions in a 1D boolean array.
+    """
+
+    mask_1d = np.array(mask_1d).astype(bool).copy()
+
+    i = 0
+    while i < len(mask_1d):
+        if mask_1d[i]:
+            i += 1
+            continue
+
+        gap_start = i
+
+        while i < len(mask_1d) and not mask_1d[i]:
+            i += 1
+
+        gap_end = i
+
+        has_true_before = gap_start > 0 and mask_1d[gap_start - 1]
+        has_true_after = gap_end < len(mask_1d) and mask_1d[gap_end]
+
+        if has_true_before and has_true_after and (gap_end - gap_start) <= max_gap:
+            mask_1d[gap_start:gap_end] = True
+
+    return mask_1d
+
+
+def get_axis_continuity_profile(
+    im,
+    axis_label,
+    intensity_fraction=0.65,
+    max_gap=4
+):
+    """
+    Score each row or column by how much long, continuous bright structure it contains.
+
+    This is intended to detect divider-like bands rather than bright specimens.
+    """
+
+    im = im.astype(float)
+
+    if im.max() > im.min():
+        im = (im - im.min()) / (im.max() - im.min())
+    else:
+        raise ValueError("Image has no intensity variation.")
+
+    cutoff = im.min() + intensity_fraction * (im.max() - im.min())
+    bright = im >= cutoff
+
+    scores = []
+
+    if axis_label == "row":
+        for r in range(bright.shape[0]):
+            row_mask = bridge_small_gaps(bright[r, :], max_gap=max_gap)
+            scores.append(longest_true_run(row_mask) / bright.shape[1])
+
+    elif axis_label == "col":
+        for c in range(bright.shape[1]):
+            col_mask = bridge_small_gaps(bright[:, c], max_gap=max_gap)
+            scores.append(longest_true_run(col_mask) / bright.shape[0])
+
+    else:
+        raise ValueError("axis_label must be 'row' or 'col'")
+
+    return np.array(scores), cutoff
+
+
+def get_axis_low_variance_profile(
+    im,
+    axis_label,
+    window_size=5
+):
+    """
+    Score rows/columns by local intensity consistency.
+
+    Divider bands should have relatively low variance across much of their length,
+    even if they are not the brightest structures in the image.
+    """
+
+    im = im.astype(float)
+
+    if im.max() > im.min():
+        im = (im - im.min()) / (im.max() - im.min())
+    else:
+        raise ValueError("Image has no intensity variation.")
+
+    scores = []
+
+    if axis_label == "row":
+        for r in range(im.shape[0]):
+            line = im[r, :]
+            line_score = 1.0 - np.var(line)
+            scores.append(line_score)
+
+    elif axis_label == "col":
+        for c in range(im.shape[1]):
+            line = im[:, c]
+            line_score = 1.0 - np.var(line)
+            scores.append(line_score)
+
+    else:
+        raise ValueError("axis_label must be 'row' or 'col'")
+
+    scores = np.array(scores)
+
+    # Smooth across neighboring rows/columns so bands emerge rather than single-pixel noise.
+    if window_size > 1:
+        kernel = np.ones(window_size) / window_size
+        scores = np.convolve(scores, kernel, mode="same")
+
+    return scores
+
+
+def review_dividers(
+    image,
+    proposed_rows=None,
+    proposed_cols=None,
+    title="Review divider locations"
+):
+    """
+    Review, accept, add, or replace divider locations.
+
+    ENTER with no clicks:
+        accept proposed dividers
+
+    Click:
+        create a completely new divider set
+    """
+
+    if proposed_rows is None:
+        proposed_rows = []
+
+    if proposed_cols is None:
+        proposed_cols = []
+
+    fig, ax = plt.subplots()
+
+    ax.imshow(image, cmap="gray")
+    ax.set_title(title)
+
+    for r in proposed_rows:
+        ax.axhline(r, color="lime", linestyle="--")
+
+    for c in proposed_cols:
+        ax.axvline(c, color="lime", linestyle="--")
+
+    clicked_rows = []
+    clicked_cols = []
+    nondivider_points = []
+
+    def onclick(event):
+
+        if event.inaxes != ax:
+            return
+
+        if event.button == 1:
+            row = int(round(event.ydata))
+            clicked_rows.append(row)
+            print(f"Row divider {len(clicked_rows)}: {row}")
+            ax.axhline(row, color="red")
+            fig.canvas.draw_idle()
+
+        elif event.button == 3:
+            col = int(round(event.xdata))
+            clicked_cols.append(col)
+            print(f"Column divider {len(clicked_cols)}: {col}")
+            ax.axvline(col, color="blue")
+            fig.canvas.draw_idle()
+
+        elif event.button == 2:
+
+            row = int(round(event.ydata))
+            col = int(round(event.xdata))
+
+            nondivider_points.append((row, col))
+
+            print(
+                f"Non-divider point {len(nondivider_points)}: "
+                f"row={row}, col={col}"
+            )
+
+            ax.plot(col, row, "go", markersize=8)
+
+            fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("button_press_event", onclick)
+
+    plt.show(block=False)
+
+    input(
+        "\nENTER = accept proposed dividers\n"
+        "Left click = row divider\n"
+        "Right click = column divider\n"
+        "Middle click = known non-divider point\n"
+        "Press ENTER when finished.\n"
+    )
+    
+    plt.close(fig)
+
+    if len(clicked_rows) == 0:
+        final_rows = np.array(proposed_rows).astype(int)
+    else:
+        final_rows = np.sort(np.array(clicked_rows).astype(int))
+
+    if len(clicked_cols) == 0:
+        final_cols = np.array(proposed_cols).astype(int)
+    else:
+        final_cols = np.sort(np.array(clicked_cols).astype(int))
+
+    print("\nFinal divider selection:")
+    print("Rows:", final_rows)
+    print("Cols:", final_cols)
+    print("Non-divider points:", nondivider_points)
+
+    return final_rows, final_cols, nondivider_points
+
+
+def local_stability_image(image, window_size=5):
+
+    local_std = ndimage.generic_filter(
+        image,
+        np.std,
+        size=window_size
+    )
+
+    stability = 1.0 / (local_std + 1)
+
+    return stability
+
 
 
 # ============================================================
