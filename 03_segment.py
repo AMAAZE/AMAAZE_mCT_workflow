@@ -369,26 +369,29 @@ for i in range(len(I)):
     print("row_band_centers:", row_band_centers.tolist())
     print("col_candidate_bands:", col_candidate_bands)
     print("col_band_centers:", col_band_centers.tolist())
-    
-    plt.figure()
-    plt.imshow(normalized_image, cmap="gray")
 
-    for r in row_candidates:
-        plt.axhline(r, color="magenta", linestyle=":", linewidth=1)
-
-    for c in col_candidates:
-        plt.axvline(c, color="magenta", linestyle=":", linewidth=1)
-
-    plt.title(f"Tier {i+1}: all candidate edge indices")
-    plt.axis("off")
-    plt.show()
-
+    # 1. Plot stability image
     plt.figure()
     plt.imshow(stability_image, cmap="gray")
     plt.title(f"Tier {i+1}: stability image, window={stability_window}")
     plt.axis("off")
     plt.show()
+    
+    # 2. Plot candiddate indices
+    plt.figure()
+    plt.imshow(normalized_image, cmap="gray")
+    
+    for r in row_candidates:
+        plt.axhline(r, color="magenta", linestyle=":", linewidth=1)
 
+    for c in col_candidates:
+        plt.axvline(c, color="magenta", linestyle=":", linewidth=1)
+    
+    plt.title(f"Tier {i+1}: all candidate edge indices")
+    plt.axis("off")
+    plt.show()
+
+    # 3. Plot paired edges 
     plt.figure()
     plt.imshow(normalized_image, cmap="gray")
 
@@ -404,6 +407,7 @@ for i in range(len(I)):
     plt.axis("off")
     plt.show()
 
+    # 4. Plot edges plus centerslines
     plt.figure()
     plt.imshow(normalized_image, cmap="gray")
 
