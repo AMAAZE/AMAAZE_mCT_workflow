@@ -314,19 +314,118 @@ for i in range(len(I)):
     )
 
 # Temp addition to build autoseg
+#
+#    for stability_window in [3]:
+#
+#        stability_image = local_stability_image(
+#            normalized_image,
+#            window_size=stability_window,
+#            percentile_low=2,
+#            percentile_high=98
+#        )
+#
+#        plt.figure()
+#        plt.imshow(stability_image, cmap="gray")
+#        plt.title(f"Tier {i+1}: local stability, window={stability_window}")
+#        plt.axis("off")
+#        plt.show()
+
+# end of temp addition
+
+# Temp addition: paired-edge centerline experiment
+
+    stability_window = 3
 
     stability_image = local_stability_image(
         normalized_image,
-        window_size=5
+        window_size=stability_window,
+        percentile_low=2,
+        percentile_high=98
     )
 
+    cutoff = np.percentile(stability_image, 20)
+    dark_mask = stability_image < cutoff
+
+    row_centers, row_pairs, row_occupancy, row_candidates, row_candidate_bands, row_band_centers = paired_edge_centerlines(
+        dark_mask,
+        axis_label="row",
+        min_fraction=0.45,
+        max_pair_gap=20
+    )
+
+    col_centers, col_pairs, col_occupancy, col_candidates, col_candidate_bands, col_band_centers = paired_edge_centerlines(
+        dark_mask,
+        axis_label="col",
+        min_fraction=0.45,
+        max_pair_gap=20
+    )
+
+    print("Tier", i+1)
+    print("row_pairs:", row_pairs)
+    print("col_pairs:", col_pairs)
+    print("row_candidates:", row_candidates.tolist())
+    print("col_candidates:", col_candidates.tolist())
+    print("row_candidate_bands:", row_candidate_bands)
+    print("row_band_centers:", row_band_centers.tolist())
+    print("col_candidate_bands:", col_candidate_bands)
+    print("col_band_centers:", col_band_centers.tolist())
+    
     plt.figure()
-    plt.imshow(stability_image, cmap="gray")
-    plt.title(f"Tier {i+1}: local stability")
+    plt.imshow(normalized_image, cmap="gray")
+
+    for r in row_candidates:
+        plt.axhline(r, color="magenta", linestyle=":", linewidth=1)
+
+    for c in col_candidates:
+        plt.axvline(c, color="magenta", linestyle=":", linewidth=1)
+
+    plt.title(f"Tier {i+1}: all candidate edge indices")
     plt.axis("off")
     plt.show()
 
-# end of temp addition
+    plt.figure()
+    plt.imshow(stability_image, cmap="gray")
+    plt.title(f"Tier {i+1}: stability image, window={stability_window}")
+    plt.axis("off")
+    plt.show()
+
+    plt.figure()
+    plt.imshow(normalized_image, cmap="gray")
+
+    for r1, r2 in row_pairs:
+        plt.axhline(r1, color="red", linestyle="--")
+        plt.axhline(r2, color="green", linestyle="--")
+
+    for c1, c2 in col_pairs:
+        plt.axvline(c1, color="red", linestyle="--")
+        plt.axvline(c2, color="green", linestyle="--")
+
+    plt.title(f"Tier {i+1}: paired edges")
+    plt.axis("off")
+    plt.show()
+
+    plt.figure()
+    plt.imshow(normalized_image, cmap="gray")
+
+    for r1, r2 in row_pairs:
+        plt.axhline(r1, color="red", linestyle="--")
+        plt.axhline(r2, color="green", linestyle="--")
+    
+    for r in row_centers:
+        plt.axhline(r, color="cyan", linewidth=2)
+
+    for c1, c2 in col_pairs:
+        plt.axvline(c1, color="red", linestyle="--")
+        plt.axvline(c2, color="green", linestyle="--")
+    
+    for c in col_centers:
+        plt.axvline(c, color="cyan", linewidth=2)
+
+    plt.title(f"Tier {i+1}: paired-edge centerlines")
+    plt.axis("off")
+    plt.show()
+
+# End Temp addition 
 
     normalized_tier_images.append(normalized_image)
 

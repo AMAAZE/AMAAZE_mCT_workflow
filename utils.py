@@ -1333,7 +1333,15 @@ def review_dividers(
     return final_rows, final_cols, nondivider_points
 
 
-def local_stability_image(image, window_size=5):
+def local_stability_image(image, window_size=5, percentile_low=2, percentile_high=98):
+    """
+    Create a local-stability image.
+
+    Low local standard deviation = high stability.
+    Percentile stretch improves visual contrast.
+    """
+
+    image = image.astype(float)
 
     local_std = ndimage.generic_filter(
         image,
@@ -1343,7 +1351,125 @@ def local_stability_image(image, window_size=5):
 
     stability = 1.0 / (local_std + 1)
 
+    lo = np.percentile(stability, percentile_low)
+    hi = np.percentile(stability, percentile_high)
+
+    if hi > lo:
+        stability = (stability - lo) / (hi - lo)
+        stability = np.clip(stability, 0, 1)
+
     return stability
+
+
+def dark_run_profile(stability_image, axis_label, threshold_fraction=0.25):
+    """
+    For each row or column, measure the longest continuous dark run.
+
+    Dark regions in the stability image mark local change/edges.
+    Long dark runs may correspond to divider boundaries.
+    """
+
+    cutoff = (
+        stability_image.min()
+        + threshold_fraction * (stability_image.max() - stability_image.min())
+    )
+
+    dark = stability_image <= cutoff
+
+    scores = []
+
+    if axis_label == "row":
+        for r in range(dark.shape[0]):
+            scores.append(longest_true_run(dark[r, :]) / dark.shape[1])
+
+    elif axis_label == "col":
+        for c in range(dark.shape[1]):
+            scores.append(longest_true_run(dark[:, c]) / dark.shape[0])
+
+    else:
+        raise ValueError("axis_label must be 'row' or 'col'")
+
+    return np.array(scores), cutoff
+
+
+def collapse_candidate_bands(candidate_idxs, max_band_gap=2):
+    """
+    Collapse nearby candidate indices into edge bands.
+
+    Example:
+        [66, 67, 73] -> bands [[66, 67], [73]]
+    """
+
+    candidate_idxs = np.array(candidate_idxs).astype(int)
+
+    if len(candidate_idxs) == 0:
+        return [], np.array([])
+
+    bands = []
+    current_band = [int(candidate_idxs[0])]
+
+    for idx in candidate_idxs[1:]:
+        idx = int(idx)
+
+        if idx - current_band[-1] <= max_band_gap:
+            current_band.append(idx)
+        else:
+            bands.append(current_band)
+            current_band = [idx]
+
+    bands.append(current_band)
+
+    band_centers = np.array([
+        np.mean(band) for band in bands
+    ])
+
+    return bands, band_centers
+
+
+def paired_edge_centerlines(binary_mask, axis_label, min_fraction=0.45, min_pair_gap=2, max_pair_gap=20):
+    """
+    Find paired edge rows/columns in a binary mask and return midpoint centerlines.
+    """
+
+    if axis_label == "row":
+        occupancy = binary_mask.mean(axis=1)
+    elif axis_label == "col":
+        occupancy = binary_mask.mean(axis=0)
+    else:
+        raise ValueError("axis_label must be 'row' or 'col'")
+
+    candidate_idxs = np.where(occupancy >= min_fraction)[0]
+    
+    candidate_bands, band_centers = collapse_candidate_bands(
+        candidate_idxs,
+        max_band_gap=2
+    )
+
+    pairs = []
+    centerlines = []
+
+    used = set()
+
+    for idx in band_centers:
+        idx = float(idx)
+
+        possible = band_centers[
+            (band_centers >= idx + min_pair_gap) &
+            (band_centers <= idx + max_pair_gap)
+        ]
+
+        if len(possible) == 0:
+            continue
+
+        partner = float(possible[0])
+
+        pairs.append([float(idx), partner])
+        centerlines.append(int(round((idx + partner) / 2)))
+
+        used.add(int(idx))
+        used.add(partner)
+
+    return centerlines, pairs, occupancy, candidate_idxs, candidate_bands, band_centers
 
 
 
