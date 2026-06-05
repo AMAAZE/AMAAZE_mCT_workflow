@@ -17,116 +17,181 @@ rotation/crop settings to controls.txt for downstream processing.
 
 from utils import *
 
-
-if slice_index_fraction is None:
-    raise RuntimeError("'slice_index_fraction' required in user inputs .json file")
-
-if ang2rot is None:
-    raise RuntimeError("'ang2rot' required in user_inputs.json")
-
-if rowrng is None or len(rowrng) != 2:
-    raise RuntimeError("'rowrng' required as [start, end] in user inputs .json file")
-
-if colrng is None or len(colrng) != 2:
-    raise RuntimeError("'colrng' required as [start, end] in user inputs .json file")
-
-if not isinstance(transpose_preview, bool):
-    raise RuntimeError("'transpose_preview' must be True or False in user inputs .json file")
-
-# TODO(dev): Generalize input discovery beyond TIFF stacks.
-# Current implementation supports .tif/.tiff image stacks only.
-# Future versions should handle DICOM and other scan formats through
-# an explicit input-loader layer rather than adding ad hoc glob patterns here.
-
-slicepath = os.path.normpath(slicepath)
-
-tif_files = []
-for ext in ("*.tif", "*.tiff", "*.TIF", "*.TIFF"):
-    tif_files.extend(glob.glob(os.path.join(slicepath, ext)))
-
-tif_files = sorted(set(tif_files))
-
-# Stop early if the slice folder is wrong or contains no TIFF slices.
-if len(tif_files) == 0:
-    raise RuntimeError("No .tif or .tiff files found in the specified slice folder.")
-
-# Sort by numeric slice index rather than filename text so non-padded names
-# do not scramble slice order.
-tif_files_with_idx = [(f, extract_index(f)) for f in tif_files]
-tif_files_with_idx.sort(key=lambda x: x[1])
-
-tif_files = [f for f, _ in tif_files_with_idx]
-indices   = [idx for _, idx in tif_files_with_idx]
-
-if any(indices[i] >= indices[i+1] for i in range(len(indices)-1)):
-    raise RuntimeError("Slice files are not strictly increasing after sorting.")
-
-# Check for missing slice indices; allow warning-only behavior if configured.
-expected = list(range(indices[0], indices[0] + len(indices)))
-
-if indices != expected:
-    msg = "Slice indices are not consecutive. Missing slices detected in slicepath."
-    
-    if allow_slice_gaps:
-        print("Warning:", msg)
-    else:
-        raise RuntimeError(msg)
-
-print("First 5 slices:", [os.path.basename(f) for f in tif_files[:5]])
-print("Last 5 slices:", [os.path.basename(f) for f in tif_files[-5:]])
-
 # ============================================================
-# Initialize run metadata
+# Load metadata
 # ============================================================
 
-run_metadata = init_run_metadata(
-    scanpath=scanpath,
-    scan_num=scan_num,
-    config=CONFIG
+print()
+dataset_path = ask_existing_path(
+    "What is the name of the dataset folder you want to continue working on?\n"
+    "This should be the same dataset folder you gave to 00_share_data.py.",
+    is_dir=True
 )
 
-run_metadata["workflow"]["01_set_rotation_crop"] = {}
+metadata_path = find_metadata_file_in_dataset(dataset_path)
+metadata = load_metadata_if_available(metadata_path)
+
+scanpath = metadata["paths"]["scanpath"]
+slicepath = metadata["paths"]["slicepath"]
+output_path = metadata["paths"]["output_path"]
+slice_index_fraction = metadata["user_choices"]["slice_index_fraction"]
 
 # ============================================================
-# User interface
+# Load slices and identify representative slice
 # ============================================================
 
-# Choose one representative slice for preview based on the user-provided fraction.
-slice_index = int(len(tif_files) * slice_index_fraction)
-slice_index = min(slice_index, len(tif_files) - 1)
-slice_file = tif_files[slice_index]
+slice_files, slice_indices = get_sorted_slice_files(slicepath)
+
+slice_index = int(len(slice_files) * slice_index_fraction)
+slice_index = min(slice_index, len(slice_files) - 1)
+
+slice_file = slice_files[slice_index]
+raw_image = read_slice(slice_file)
+
+print()
+print("Using representative slice:")
+print(os.path.basename(slice_file))
+
+# ============================================================
+# Set transpose
+# ============================================================
+transpose_preview = False
+oriented_image = apply_preview_orientation(raw_image, transpose_preview)
+
+fig, ax = plt.subplots()
+plt.show(block=False)
+update_preview(ax, fig, oriented_image, f"Representative slice | transpose_preview={transpose_preview}")
+
+while True:
+
+    print()
+    print("Compare the preview window to your layout CSV.")
+    print("If rows and columns appear swapped relative to the layout, transpose the preview.")
+    print()
+
+    transpose_preview = ask_yes_no(
+        "Would you like to transpose the preview image?",
+        default="n"
+    )
+
+    oriented_image = apply_preview_orientation(raw_image, transpose_preview)
+
+    update_preview(ax, fig, oriented_image, f"Representative slice | transpose_preview={transpose_preview}")
+
+    satisfied = ask_yes_no(
+        "Does this orientation look correct relative to the layout CSV?",
+        default="y"
+    )
+
+    if satisfied:
+        break
+
+
+# ============================================================
+# Set rotation
+# ============================================================
+
+rotation_angle = 0.0
+
+while True:
+
+    print()
+    print("The next step is rotation.")
+    print("Positive values rotate counterclockwise.")
+    print("Negative values rotate clockwise.")
+    print()
+
+    rotation_angle = ask(
+        "Enter a rotation angle in degrees.",
+        default=rotation_angle,
+        cast=float
+    )
+
+    rotated_image = apply_preview_rotation(
+        oriented_image,
+        rotation_angle
+    )
+
+    update_preview(ax, fig, rotated_image, f"Rotation = {rotation_angle} degrees")
+
+    satisfied = ask_yes_no(
+        "Does this rotation look correct?",
+        default="y"
+    )
+
+    if satisfied:
+        break
+
+print()
+print("Rotation accepted.")
+print("Please close the rotation preview window to continue to cropping.")
+input("Press Enter after closing the rotation preview window...")
+
+plt.close(fig)
+
+# ============================================================
+# Set crop
+# ============================================================
+
+while True:
+
+    rowrng, colrng = collect_crop_bounds(rotated_image)
     
-I = plt.imread(slice_file)
+    if rowrng is None or colrng is None:
+        continue
 
-# Apply preview-only orientation before rotation/cropping for visual alignment.
-# NOTE(dev): Transform order matters.
-# 1. transpose_preview aligns TIFF-native orientation with layout orientation.
-# 2. ang2rot rotates the layout-aligned image for display/segmentation.
-# 3. resize=True preserves the full rotated canvas for rectangular scans.
-# 4. rowrng/colrng crop the transformed display-space image.
-imdisp = apply_preview_orientation(I, transpose_preview) 
-imdisp = rotate(imdisp, ang2rot, preserve_range=True, resize=True)
-imdisp = imdisp[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
+    cropped_image = rotated_image[
+        rowrng[0]:rowrng[1],
+        colrng[0]:colrng[1]
+    ].copy()
 
-# TODO(dev): Replace manual JSON crop bounds with click-based crop selection.
-# For now, rowrng and colrng are entered in user_inputs.json.
-# These coordinates are in display space after transpose_preview and ang2rot,
-# not in raw TIFF-native coordinate space.
+    plt.figure()
+    plt.imshow(cropped_image, cmap="gray")
+    plt.title(f"Crop preview | rows={rowrng}, cols={colrng}")
+    plt.axis("off")
+    plt.show(block=False)
 
-# Visual check: adjust JSON settings and rerun if needed.  
-plt.imshow(imdisp)
-plt.title(f"Preview slice | rotation={ang2rot}, rows={rowrng}, cols={colrng}")
+    satisfied = ask_yes_no(
+        "Does this crop look correct?",
+        default="y"
+    )
 
-# This file will be saved in the scan directory
-controls_fname = os.path.join(scanpath, "controls.txt")
+    if satisfied:
+        break
+    else:
+        plt.close()
+        print()
+        print("Let's try the crop again.")
 
-# NOTE: Output format used by downstream scripts.
-# Revisit if modifying key names, spacing, or delimiters.
-with open(controls_fname, "w") as f:
-    f.write(f"ang2rot: {ang2rot}\n")
-    f.write(f"rowrng: {rowrng}\n")
-    f.write(f"colrng: {colrng}\n")
-    f.write(f"transpose_preview: {transpose_preview}\n")
+# ============================================================
+# Update metadata
+# ============================================================
 
-print(f"Rotation and crop settings saved to {controls_fname}")
-plt.show()
+metadata["orientation"] = {
+    "transpose_preview": transpose_preview,
+    "rotation_angle": rotation_angle
+}
+
+metadata["cropping"] = {
+    "rowrng": rowrng,
+    "colrng": colrng
+}
+
+metadata["workflow"]["01_set_rotation_crop"] = {
+    "status": "complete"
+}
+
+save_metadata(metadata_path, metadata)
+
+
+# ============================================================
+# Confirm completion
+# ============================================================
+print()
+print("Rotation and crop setup complete.")
+print("Metadata updated:")
+print(metadata_path)
+print()
+print("Next step:")
+print("python 02_build_subvolume.py")
+

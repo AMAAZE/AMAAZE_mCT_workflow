@@ -19,56 +19,33 @@ for downstream extraction and surfacing.
 """
 
 # ============================================================
-# Validate required input paths
+# Configuration and imports
 # ============================================================
 
 from utils import *
 
-slicepath = os.path.normpath(slicepath)
-
-if not os.path.isdir(slicepath):
-    raise RuntimeError("The provided slicepath was not found.")
-
-if not os.path.exists(layoutfile): 
-    raise RuntimeError("The layoutfile was not found.")
-
 # ============================================================
-# Load workflow configuration from JSON
-# ============================================================
-# User-authored configuration is loaded through utils.py.
-#
-# This script should not read or write ct<scan_num>_params.txt.
-# The old params.txt file mixed configuration, cached results,
-# remembered user choices, and provenance.
-#
-# In this refactor:
-# - JSON stores user-provided configuration.
-# - Runtime metadata objects store values generated during this run.
-# - A future run-metadata export will preserve provenance after execution.
-
-# ============================================================
-# Load run metadata
+# Load metadata and subvolume
 # ============================================================
 
-run_metadata = load_run_metadata(scanpath, scan_num)
+print()
+dataset_path = ask_existing_path(
+    "What is the name of the dataset folder you want to continue working on?\n"
+    "This should be the same dataset folder you gave to 00_share_data.py.",
+    is_dir=True
+)
 
-run_metadata["workflow"]["03_segment"] = {}
+metadata_path = find_metadata_file_in_dataset(dataset_path)
+metadata = load_metadata_if_available(metadata_path)
 
+scanpath = metadata["paths"]["scanpath"]
+output_path = metadata["paths"]["output_path"]
+layoutfile = metadata["paths"]["layoutfile"]
 
-# ============================================================
-# Load TIFF filenames
-# ============================================================
+dataset_name = metadata["dataset_name"]
+scan_num = metadata["scan_num"]
 
-"""
-NOTE (dev)
-Do we need this if we are going to use only npz space?
-"""
-
-# ============================================================
-# Load reduced working volume
-# ============================================================
-
-npz_fname = os.path.join(scanpath, f"ct{scan_num}_new.npz")
+npz_fname = metadata["outputs"]["npz_file"]
 
 if not os.path.exists(npz_fname):
     raise RuntimeError(
@@ -81,7 +58,7 @@ saveddata = np.load(npz_fname)
 vol = saveddata["vol"]
 rowrng = saveddata["rowrng"]
 colrng = saveddata["colrng"]
-ang2rot = saveddata["ang"]
+rotation_angle = float(saveddata["ang"])
 origsz = saveddata["origsz"]
 rem = saveddata["remainder"]
 transpose_preview = bool(saveddata["transpose_preview"])
@@ -89,12 +66,12 @@ transpose_preview = bool(saveddata["transpose_preview"])
 rowsz = rowrng[1] - rowrng[0]
 colsz = colrng[1] - colrng[0]
 
-run_metadata["workflow"]["03_segment"]["inputs"] = {
+metadata["workflow"]["03_segment"]["inputs"] = {
     "npz_file": npz_fname,
     "volume_shape": list(vol.shape),
     "rowrng": rowrng.tolist(),
     "colrng": colrng.tolist(),
-    "ang2rot": float(ang2rot),
+    "rotation_angle": float(rotation_angle),
     "transpose_preview": transpose_preview,
 }
 
@@ -164,44 +141,48 @@ tier_mask = np.array([np.any(layout_by_tier[t]["mask"]) for t in tier_ids])
 # ============================================================
 # Tier Division
 # ============================================================
-
-"""
-NOTE (dev)
-Detect or define tiers, show user-verifiable output, record tier boundaries explicitly.
-Good code exists for this. 
-I would like to compare the code for this on the main branch to the code for this on the second branch.
-This already has a user-integrated step whereby they can click on the grid to set the boundaries.
-"""
-
-# This step works from the reduced .npz volume, not directly from the original TIFF stack.
+# This step operates in reduced .npz space.
 #
-# It collapses each Z slice into one average value, producing a 1D signal
-# through the stack. Peaks/dips in that signal are used to identify tier
-# boundaries.
+# Each Z slice is collapsed to one average intensity value, producing
+# a 1D signal through the scan. Broad peaks in that signal correspond
+# to major packaging boundaries, such as the box edges and tier dividers.
+#
+# Candidate peaks are detected with scipy.signal.find_peaks(), and
+# prominence is used to choose the strongest internal tier boundaries
+# expected from the layout CSV.
 
 q = -np.mean(np.mean(vol,1),1)
-sig = q.copy()
+tier_signal = q.copy()
 q = q - q.min()
 
+"""
+NOTE(dev): 3e7 is a magic number. Review
+"""
 thresh = 3e7/(vol.shape[1]*vol.shape[2])
 q[q<thresh] = 0
 
-# NOTE: peak width controls minimum feature size detected in the 1D projection.
-# If divider contrast is low or features are narrow, this may need adjustment.
-# This is a heuristic parameter, not a fixed physical constant.
-vert_pks = find_peaks(q,width=10)[0]
-vert_pks = np.concatenate((np.array([0]),vert_pks))
-vert_pks = np.concatenate((vert_pks,np.array([len(q)])) )
+"""
+NOTE(dev): width=10 is a magic number. Review
+"""
+vert_pks, peak_props = find_peaks(q, width=10, prominence=0)
+
+suggested_tier_boundaries = select_tier_boundaries_by_prominence(
+    q=q,
+    peaks=vert_pks,
+    peak_props=peak_props,
+    n_tiers=n_tiers
+)
 
 fig = plt.figure()
-plt.plot(np.arange(len(q)),sig)
+plt.plot(np.arange(len(q)),tier_signal)
 plt.xlabel('slice height (z)'); plt.ylabel('(-) average tier density'); plt.title('tier segmentation')
-for vvv in vert_pks:
+
+for vvv in suggested_tier_boundaries:
     plt.axvline(x=vvv, color='green', linestyle='--', linewidth=2)
 
 print(
-    "green lines are candidate vertical tier-boundary peaks. \n"
-    "Click the final tier boundary positions if the candidates are not correct. \n"
+    "green lines are suggested tier boundaries. \n"
+    "Click final tier boundary positions only if the suggestions are not correct. \n"
     "# tiers is %1d, # nonempty tiers is %2d \n" % (n_tiers, np.sum(tier_mask))
 )
         
@@ -229,68 +210,67 @@ if len(clicked_x) > 0:
     tier_detection_method = "manual_override"
     print("new vertical peaks", ex)
 else:
-    ex = vert_pks
+    ex = suggested_tier_boundaries
     tier_detection_method = "automatic_peaks"
     print("using ", ex)
 
 tier_metadata = {}
-run_metadata["workflow"]["03_segment"]["tiers"] = tier_metadata
+metadata["workflow"]["03_segment"]["tiers"] = tier_metadata
 tier_metadata["tier_boundaries"] = [int(v) for v in ex]
 tier_metadata["n_detected_tiers"] = len(ex) - 1
 tier_metadata["tier_detection_method"] = tier_detection_method
 
 # Convert the selected tier boundary positions into start/end ranges.
 # Each range is one tier in the reduced .npz volume.
-#
-# REVIEW:
-# The ranges are reversed here. This may be intentional because of scan/layout
-# orientation, but we should confirm before changing it.
 
-ranges = []
-for i in range(len(ex)-1):
-    ranges.append([ex[i],ex[i+1]])
+ranges = [
+    [ex[i], ex[i + 1]]
+    for i in range(len(ex) - 1)
+]
 
-# TEMP(dev): Explicitly recording current tier-order behavior.
-# Replace with JSON-configured tier order once that setting is added.
-tier_metadata["reverse_detected_tier_order"] = True
+# Scan order and layout order are not always the same.
+# If configured, reverse the detected tier order before matching
+# tiers to the layout CSV.
 
-if tier_metadata["reverse_detected_tier_order"]:
-    ranges = ranges[-1::-1]
+tier_metadata["reverse_detected_tier_order"] = reverse_detected_tier_order
 
-tiers = np.arange(n_tiers)[tier_mask]
-ranges = [ranges[i] for i in tiers]
+if reverse_detected_tier_order:
+    ranges = ranges[::-1]
 
-tier_metadata["active_tier_indices"] = [int(v) for v in tiers]
+# Remove tiers that contain no specimens according to the layout file.
+
+active_tiers = np.arange(n_tiers)[tier_mask]
+ranges = [ranges[i] for i in active_tiers]
+
+tier_metadata["active_tier_indices"] = [int(v) for v in active_tiers]
 tier_metadata["active_tier_ranges"] = [
     [int(start), int(end)] for start, end in ranges
 ]
 
-# Pull out the reduced-volume data for each tier.
-# Each item in SLICES is one tier-sized chunk of the .npz volume.
-#
-# This means the downstream divider/cell segmentation is operating on
-# reduced .npz data, not directly on the full TIFF stack.
+# Extract the reduced-volume data for each active tier.
+# Downstream divider and cell segmentation operate in .npz space.
 
-SLICES = []
-for i in range(len(ranges)):
-    SLICES.append(vol[ranges[i][0]:ranges[i][1],:,:])
+SLICES = [
+    vol[start:end, :, :]
+    for start, end in ranges
+]
 
+# Mean projection of each active tier used for divider detection.
 I = [x.mean(0) for x in SLICES]
 
-# This will store the final extraction instructions.
-# At the end of the script, these become CT<scan_num>.csv.
-#
-# That CSV is used by 04_surface.py to go back to the original TIFF stack and
-# extract each specimen.
+# Final extraction instructions.
+# Written to CT<scan_num>.csv and used by 04_surface.py.
 
 EXTRACTS = []
-
-
 
 
 # ============================================================
 # Per-tier geometric normalization via rotation
 # ============================================================
+
+# This step applies a small per-tier rotation correction before 
+# divider detection. The applied rotation angle is recorded in
+# run metadata for replication.
 
 normalized_tier_images = []
 rotation_metadata = []
@@ -312,28 +292,69 @@ for i in range(len(I)):
         resize=False,
         mode="edge"
     )
+    
+    normalized_tier_images.append(normalized_image)
 
-# Temp addition to build autoseg
-#
-#    for stability_window in [3]:
-#
-#        stability_image = local_stability_image(
-#            normalized_image,
-#            window_size=stability_window,
-#            percentile_low=2,
-#            percentile_high=98
-#        )
-#
-#        plt.figure()
-#        plt.imshow(stability_image, cmap="gray")
-#        plt.title(f"Tier {i+1}: local stability, window={stability_window}")
-#        plt.axis("off")
-#        plt.show()
+    rotation_metadata.append({
+        "tier_index": int(i),
+        "rotation_angle": best_angle,
+        "angle_min": -5,
+        "angle_max": 5,
+        "angle_step": 0.25,
+        "best_score": float(rotation_scores.max()),
+    })
+    
+metadata["workflow"]["03_segment"]["tier_rotations"] = rotation_metadata
+    
+# ============================================================
+# Per-tier divider detection
+# ============================================================
 
-# end of temp addition
+"""
+Divider detection operates on the mean projection of each active tier.
 
-# Temp addition: paired-edge centerline experiment
+A local stability image is computed to emphasize specimen and divider
+boundaries while suppressing much of the internal texture. The stability
+image is thresholded and converted into row- and column-wise occupancy
+profiles.
 
+Rows and columns with high occupancy are treated as candidate divider
+edges. Neighboring candidate indices are collapsed into edge bands,
+paired according to plausible divider widths, and converted into divider
+centerlines.
+
+Diagnostic plots are generated to visualize:
+1. The stability image.
+2. Candidate divider edges.
+3. Paired divider edges.
+4. Final divider centerlines.
+
+The resulting divider network is used to define specimen extraction
+regions for downstream processing.
+"""
+
+divider_proposals = []
+
+for i, normalized_image in enumerate(normalized_tier_images):
+
+    """
+    NOTE(dev): window_size=3, percentile_low=2,
+    and percentile_high=98 heuristic parameters.
+
+    Smaller windows produce sharper local edge responses.
+    Larger windows broaden the stability halos and may merge
+    nearby features.
+
+    Values below the 2nd percentile and above the 98th percentile
+    are clipped before normalization to reduce the influence of
+    extreme intensity values.
+
+    Current value selected empirically because it produced
+    stable divider detection on test datasets while preserving
+    boundary localization.
+
+    Review across additional datasets.
+    """
     stability_window = 3
 
     stability_image = local_stability_image(
@@ -343,8 +364,46 @@ for i in range(len(I)):
         percentile_high=98
     )
 
+    """
+    NOTE(dev): dark-mask percentile cutoff = 20 is a heuristic parameter.
+
+    Occupancy responses below this value are discarded prior to
+    candidate divider selection.
+    
+    Occupancy is the number of pixels within a row or column that
+    are classified as stability features after thresholding the
+    local stability image.
+
+    Lower values increase sensitivity but may introduce weak or
+    spurious divider candidates. Higher values suppress weak
+    responses and favor stronger divider signals.
+
+    Current value selected empirically during divider-detection
+    development. Review across additional datasets.
+    """
+
     cutoff = np.percentile(stability_image, 20)
     dark_mask = stability_image < cutoff
+
+    """
+    NOTE(dev): occupancy_threshold=0.45, min_pair_gap=20,
+    and max_pair_gap=20 are heuristic parameters.
+
+    occupancy_threshold defines the minimum fraction of pixels
+    classified as stability features required for a row or column
+    to become a candidate divider edge.
+
+    min_pair_gap and max_pair_gap define the allowable separation
+    between candidate edge bands when pairing opposite sides of a
+    divider.
+
+    Lower occupancy thresholds increase sensitivity but may
+    introduce false positives. Wider pairing ranges permit more
+    divider-width variation but may increase incorrect pairings.
+
+    Current values were selected empirically during development.
+    Review across additional datasets.
+    """
 
     row_centers, row_pairs, row_occupancy, row_candidates, row_candidate_bands, row_band_centers = paired_edge_centerlines(
         dark_mask,
@@ -360,202 +419,80 @@ for i in range(len(I)):
         max_pair_gap=20
     )
 
-    print("Tier", i+1)
-    print("row_pairs:", row_pairs)
-    print("col_pairs:", col_pairs)
-    print("row_candidates:", row_candidates.tolist())
-    print("col_candidates:", col_candidates.tolist())
-    print("row_candidate_bands:", row_candidate_bands)
-    print("row_band_centers:", row_band_centers.tolist())
-    print("col_candidate_bands:", col_candidate_bands)
-    print("col_band_centers:", col_band_centers.tolist())
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
-    # 1. Plot stability image
-    plt.figure()
-    plt.imshow(stability_image, cmap="gray")
-    plt.title(f"Tier {i+1}: stability image, window={stability_window}")
-    plt.axis("off")
-    plt.show()
-    
-    # 2. Plot candiddate indices
-    plt.figure()
-    plt.imshow(normalized_image, cmap="gray")
-    
+    # 1. Stability image
+    axs[0, 0].imshow(stability_image, cmap="gray")
+    axs[0, 0].set_title(f"Tier {i+1}: stability image")
+    axs[0, 0].axis("off")
+
+    # 2. Candidate divider edges
+    axs[0, 1].imshow(normalized_image, cmap="gray")
+
     for r in row_candidates:
-        plt.axhline(r, color="magenta", linestyle=":", linewidth=1)
+        axs[0, 1].axhline(r, color="magenta", linestyle=":", linewidth=1)
 
     for c in col_candidates:
-        plt.axvline(c, color="magenta", linestyle=":", linewidth=1)
-    
-    plt.title(f"Tier {i+1}: all candidate edge indices")
-    plt.axis("off")
-    plt.show()
+        axs[0, 1].axvline(c, color="magenta", linestyle=":", linewidth=1)
 
-    # 3. Plot paired edges 
-    plt.figure()
-    plt.imshow(normalized_image, cmap="gray")
+    axs[0, 1].set_title("Candidate divider edges")
+    axs[0, 1].axis("off")
+
+    # 3. Paired divider edges
+    axs[1, 0].imshow(normalized_image, cmap="gray")
 
     for r1, r2 in row_pairs:
-        plt.axhline(r1, color="red", linestyle="--")
-        plt.axhline(r2, color="green", linestyle="--")
+        axs[1, 0].axhline(r1, color="red", linestyle="--")
+        axs[1, 0].axhline(r2, color="green", linestyle="--")
 
     for c1, c2 in col_pairs:
-        plt.axvline(c1, color="red", linestyle="--")
-        plt.axvline(c2, color="green", linestyle="--")
+        axs[1, 0].axvline(c1, color="red", linestyle="--")
+        axs[1, 0].axvline(c2, color="green", linestyle="--")
 
-    plt.title(f"Tier {i+1}: paired edges")
-    plt.axis("off")
-    plt.show()
+    axs[1, 0].set_title("Paired divider edges")
+    axs[1, 0].axis("off")
 
-    # 4. Plot edges plus centerslines
-    plt.figure()
-    plt.imshow(normalized_image, cmap="gray")
+    # 4. Divider centerlines
+    axs[1, 1].imshow(normalized_image, cmap="gray")
 
     for r1, r2 in row_pairs:
-        plt.axhline(r1, color="red", linestyle="--")
-        plt.axhline(r2, color="green", linestyle="--")
-    
+        axs[1, 1].axhline(r1, color="red", linestyle="--")
+        axs[1, 1].axhline(r2, color="green", linestyle="--")
+
     for r in row_centers:
-        plt.axhline(r, color="cyan", linewidth=2)
+        axs[1, 1].axhline(r, color="cyan", linewidth=2)
 
     for c1, c2 in col_pairs:
-        plt.axvline(c1, color="red", linestyle="--")
-        plt.axvline(c2, color="green", linestyle="--")
-    
+        axs[1, 1].axvline(c1, color="red", linestyle="--")
+        axs[1, 1].axvline(c2, color="green", linestyle="--")
+
     for c in col_centers:
-        plt.axvline(c, color="cyan", linewidth=2)
+        axs[1, 1].axvline(c, color="cyan", linewidth=2)
 
-    plt.title(f"Tier {i+1}: paired-edge centerlines")
-    plt.axis("off")
+    axs[1, 1].set_title("Divider centerlines")
+    axs[1, 1].axis("off")
+
+    fig.suptitle(f"Tier {i+1}: automated divider proposal", fontsize=14)
+    plt.tight_layout()
     plt.show()
+       
+    review_choice = input(
+        "\nPress ENTER to accept automated dividers "
+        "or type 'm' for manual override: "
+    )
 
-# End Temp addition 
-
-    normalized_tier_images.append(normalized_image)
-
-    rotation_metadata.append({
-        "tier_index": int(i),
-        "rotation_angle": best_angle,
-        "angle_min": -5,
-        "angle_max": 5,
-        "angle_step": 0.25,
-        "best_score": float(rotation_scores.max()),
+    divider_proposals.append({
+        "tier_id": int(tier_ids[i]),
+        "proposed_rows": np.array(row_centers).astype(int),
+        "proposed_cols": np.array(col_centers).astype(int),
+        "review_choice": review_choice.strip().lower()
     })
-
-    plt.figure()
-    plt.plot(tested_angles, rotation_scores)
-    plt.axvline(
-        best_angle, 
-        linestyle="--",
-        label=f"Best angle = {best_angle:.2f}°"
-    )
-    plt.title(
-        f"Tier {i+1}: rotation coherence score\n"
-        f"Best angle = {best_angle:.2f}°"
-    )
-    plt.xlabel("Rotation angle")
-    plt.ylabel("Coherence score")
-    plt.show()
-
-    plt.figure()
-    plt.imshow(normalized_image, cmap="gray")
-    plt.title(f"Tier {i+1}: normalized image, angle={best_angle:.2f}")
-    plt.axis("off")
-    plt.show()
-
-# input("Press Enter after reviewing rotation plots...")
-
-run_metadata["workflow"]["03_segment"]["tier_rotations"] = rotation_metadata
-
-
-# ============================================================
-# Per-tier divider detection
-# ============================================================
-"""
-NOTE (dev)
-horizontal aggregation first, vertical aggregation second, with detected divider lines saved and previewed.
-This is where we will try something new. 
-For each geometrically normalized tier in NPZ space, we will generate representative 2D slice views or projections and compute horizontal and vertical intensity aggregation profiles across rows and columns. Divider detection will identify long, continuous, low-variance bright bands by evaluating changes in aggregated intensity and continuity across neighboring rows and columns rather than relying solely on individual voxel threshold values. Automatically detected divider boundaries will then be visualized for user verification, with manual click-based overrides available when needed before the finalized divider layout is passed downstream.
-"""
-
-divider_metadata = []
-
-for i, normalized_image in enumerate(normalized_tier_images):
-
-    tier_id = int(tier_ids[i])
-    layouti = layout_by_tier[tier_id]["layout"]
-    maski = layout_by_tier[tier_id]["mask"]
-
-    row_profile = get_axis_low_variance_profile(
-        normalized_image,
-        axis_label="row",
-        window_size=5
-    )
-
-    col_profile = get_axis_low_variance_profile(
-        normalized_image,
-        axis_label="col",
-        window_size=5
-    )
-
-    row_bands, row_cutoff, row_bright = detect_bright_bands_from_profile(
-        row_profile,
-        threshold_fraction=0.85,
-        min_band_width=2
-    )
-
-    col_bands, col_cutoff, col_bright = detect_bright_bands_from_profile(
-        col_profile,
-        threshold_fraction=0.85,
-        min_band_width=2
-    )
-
-    divider_metadata.append({
-        "tier_index": int(i),
-        "tier_id": tier_id,
-        "layout_shape": list(layouti.shape),
-        "row_bands": row_bands,
-        "col_bands": col_bands,
-        "row_profile_cutoff": float(row_cutoff),
-        "col_profile_cutoff": float(col_cutoff),
-    })
-
-    plt.figure()
-    plt.plot(row_profile)
-    plt.axhline(row_cutoff, linestyle="--")
-    for start, end in row_bands:
-        plt.axvspan(start, end, alpha=0.25)
-    plt.title(f"Tier {tier_id}: horizontal divider-band profile")
-    plt.xlabel("Image row")
-    plt.ylabel("Continuity score")
-    plt.show()
-
-    plt.figure()
-    plt.plot(col_profile)
-    plt.axhline(col_cutoff, linestyle="--")
-    for start, end in col_bands:
-        plt.axvspan(start, end, alpha=0.25)
-    plt.title(f"Tier {tier_id}: vertical divider-band profile")
-    plt.xlabel("Image column")
-    plt.ylabel("Continuity score")
-    plt.show()
-
-    plt.figure()
-    plt.imshow(normalized_image, cmap="gray")
-    for start, end in row_bands:
-        plt.axhspan(start, end, alpha=0.25)
-    for start, end in col_bands:
-        plt.axvspan(start, end, alpha=0.25)
-    plt.title(f"Tier {tier_id}: proposed divider bands")
-    plt.axis("off")
-    plt.show()
-
-run_metadata["workflow"]["03_segment"]["divider_detection"] = divider_metadata
-
 
 # ============================================================
 # Divider review / correction layer
 # ============================================================
+# manual-only mode: proposals are empty
+# assisted mode: proposals come from automation
 
 final_divider_metadata = []
 
@@ -563,86 +500,78 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
     tier_id = int(tier_ids[i])
 
-    proposed_rows = []
-    proposed_cols = []
+    proposed_rows = divider_proposals[i]["proposed_rows"]
+    proposed_cols = divider_proposals[i]["proposed_cols"]
 
-    final_rows, final_cols, nondivider_points = review_dividers(
-        image=normalized_image,
-        proposed_rows=proposed_rows,
-        proposed_cols=proposed_cols,
-        title=f"Tier {tier_id}: divider review"
-    )
+    if divider_proposals[i]["review_choice"] == "m":
 
+        final_rows, final_cols = review_dividers(
+            image=normalized_image,
+            title=f"Tier {tier_id}: divider review"
+        )
+
+    else:
+
+        final_rows = proposed_rows
+        final_cols = proposed_cols
+    
     final_divider_metadata.append({
         "tier_id": tier_id,
+        "proposed_row_dividers": proposed_rows.tolist(),
+        "proposed_col_dividers": proposed_cols.tolist(),
         "final_row_dividers": final_rows.tolist(),
         "final_col_dividers": final_cols.tolist(),
-        "nondivider_points": nondivider_points,
+        "divider_method": (
+            "automatic_accepted"
+            if np.array_equal(final_rows, proposed_rows)
+            and np.array_equal(final_cols, proposed_cols)
+            else "manual_override"
+        ),
     })
 
-run_metadata["workflow"]["03_segment"]["final_dividers"] = final_divider_metadata
+metadata["workflow"]["03_segment"]["final_dividers"] = final_divider_metadata
 
-save_run_metadata(scanpath, scan_num, run_metadata)
-
-# ============================================================
-# Temporary Experiment to try and find the right parameter for autodetect
-# ============================================================
-
-print("Final rows:", final_rows)
-print("Final cols:", final_cols)
-print("Non-divider points:", nondivider_points)
-
-for row, col in nondivider_points:
-
-    divider_row = final_rows[0]
-
-    plt.figure()
-
-    plt.plot(
-        normalized_image[divider_row, :],
-        label=f"Divider row {divider_row}"
-    )
-
-    plt.plot(
-        normalized_image[row, :],
-        label=f"Non-divider row {row}"
-    )
-
-    plt.title("Divider row vs non-divider row")
-    plt.xlabel("Column")
-    plt.ylabel("Intensity")
-    plt.legend()
-
-    plt.show()
-
-    divider_col_1 = final_cols[0]
-
-    plt.figure()
-
-    plt.plot(
-        normalized_image[:, divider_col_1],
-        label=f"Divider column {divider_col_1}"
-    )
-
-    plt.plot(
-        normalized_image[:, col],
-        label=f"Non-divider column {col}"
-    )
-
-    plt.title("Divider column vs non-divider column")
-    plt.xlabel("Row")
-    plt.ylabel("Intensity")
-    plt.legend()
-
-    plt.show()
 
 # ============================================================
-# Final layout output
+# Future work: final extraction handoff
 # ============================================================
 
-save_run_metadata(scanpath, scan_num, run_metadata)
+save_metadata(metadata_path, metadata)
 
 """
 NOTE (dev)
 write the tier/grid/divider information in the exact form needed by downstream scripts, either preserving the old expected format or creating a cleaner format plus compatibility export.
 """
+
+# ============================================================
+# Update metadata
+# ============================================================
+
+metadata["workflow"]["03_segment"] = {
+    "status": "complete",
+    "inputs": {
+        "npz_file": npz_fname,
+        "volume_shape": list(vol.shape),
+        "rowrng": rowrng.tolist(),
+        "colrng": colrng.tolist(),
+        "rotation_angle": float(rotation_angle),
+        "transpose_preview": transpose_preview,
+    },
+    "tiers": tier_metadata,
+    "tier_rotations": rotation_metadata,
+    "final_dividers": final_divider_metadata,
+}
+
+save_metadata(metadata_path, metadata)
+
+# ============================================================
+# Confirm completion
+# ============================================================
+print()
+print("Subvolume created.")
+print("Metadata updated:")
+print(metadata_path)
+print()
+print("Next step:")
+print("python 04_surface.py")
+
