@@ -9,3 +9,4 @@ __pycache__/
 # Python cache
 __pycache__/
 *.pyc
+*.npz

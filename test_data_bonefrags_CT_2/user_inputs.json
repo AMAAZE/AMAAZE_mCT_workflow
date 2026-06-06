@@ -1,29 +1,30 @@
 {
-  "scanpath": "test_data_bonefrags_CT_2",
-  "slicepath": "test_data_bonefrags_CT_2/Slices_cropped",
-  "scan_num": 2,
-  "layoutfile": "test_data_bonefrags_CT_2/layout_bone_data_cropped.csv",
-  "slice_index_fraction": 0.18,
-  "rowrng": [0, 5000],
-  "colrng": [0, 5000],
-  "transpose_preview": true,
-  "ang2rot": -90,
-  "n_dividers_row": null,
-  "n_dividers_col": null,
-  "row_dividers_override": null,
-  "col_dividers_override": null,
-  "iso_thresholds_override": null,
-  "allow_slice_gaps": 0, 
-  "zwindow": 1,
-  "iso": 15000,
-  "padding": 5,
-  "calibration_filename": null,
-  "voxel_size_mm": 0.046,
-  "voxel_spacing_mm": 0.024,
-  "extract_ncores": null,
-  "surface_ncores": null,
-  "clean_ncores": null,
-  "dust_cutoff": 1000,
-  "hole_tolerance": 0
+  "scanpath": "test_data_bonefrags_CT_2", This could be handled in the pre-flow interview (00)
+  "slicepath": "test_data_bonefrags_CT_2/Slices_cropped",  This could be handled in the pre-flow interview (00)
+  "scan_num": 2,  This could be handled in the pre-flow interview (00)
+  "layoutfile": "test_data_bonefrags_CT_2/layout_bone_data_cropped.csv",  This could be handled in the pre-flow interview (00)
+  "slice_index_fraction": 0.18,  This could be handled in the pre-flow interview (00)
+  "rowrng": [0, 5000], --- click in 01 on rep image
+  "colrng": [0, 5000], --- click in 01 on rep image
+  "ang2rot": -90, --- rotate, then tranpose, then crop. 01
+  "transpose_preview": true, Give directions to compare rep slice with layout to ensure transpose is not needed/needed
+  "reverse_detected_tier_order": true, --- not sure how to handle this and when
+  "n_dividers_row": null, --- obsolete handled in 03
+  "n_dividers_col": null, --- obsolete handled in 03
+  "row_dividers_override": null,  --- obsolete handled in 03
+  "col_dividers_override": null,  --- obsolete handled in 03
+  "iso_thresholds_override": null, --- not sure about this
+  "allow_slice_gaps": 0, This I think refers to whether or no you can skip numbers in the file indices? I'm not sure. We need to bre reminded what to do with this.
+  "zwindow": 1, I can't remember what this is about.
+  "iso": 15000, Not sure where this should be in the workflow and how to train someone on what choice to make for original value. I've offered directios nfor adjustment, but how do you know what to choose to begin with? 
+  "padding": 5, can't remember what this is
+  "calibration_filename": null, I think we should make this obsolete and just ask them to input the voxel values.
+  "voxel_size_mm": 0.046, Voxel value 
+  "voxel_spacing_mm": 0.024, if not isotropic
+  "extract_ncores": null, Not sure how to handle this
+  "surface_ncores": null, Not sure how to handle this
+  "clean_ncores": null, Not sure how to handle this
+  "dust_cutoff": 1000, Nots sure how to handle this
+  "hole_tolerance": 0 Not sure how to handle this---perhaps all these surfacing related questions are an ask and answer situation when the surfacing protocol is engaged and then once the surfacing begins, we can tell them to walk away and come back later and expect to find whatever outputs they will find. 
 }
 

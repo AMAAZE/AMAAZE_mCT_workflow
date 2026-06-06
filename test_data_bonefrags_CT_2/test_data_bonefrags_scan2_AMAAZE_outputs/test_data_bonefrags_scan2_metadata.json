@@ -1,0 +1,54 @@
+{
+  "dataset_name": "test_data_bonefrags",
+  "scan_num": 2,
+  "paths": {
+    "scanpath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2",
+    "slicepath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/Slices_cropped",
+    "layoutfile": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/layout_bone_data_cropped.csv",
+    "output_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_scan2_AMAAZE_outputs",
+    "metadata_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_scan2_AMAAZE_outputs/test_data_bonefrags_scan2_metadata.json"
+  },
+  "input_slices": {
+    "supported_extensions": [
+      ".tif",
+      ".tiff",
+      ".dcm",
+      ".dicom"
+    ],
+    "n_slices": 3439,
+    "first_slice": "AMAAZE_2_Y_0001.tif",
+    "last_slice": "AMAAZE_2_Y_3439.tif",
+    "first_slice_index": 1,
+    "last_slice_index": 3439,
+    "slice_indices_are_consecutive": true
+  },
+  "user_choices": {
+    "slice_index_fraction": 0.25,
+    "voxel_size_mm": 0.046,
+    "voxel_spacing_mm": 0.024
+  },
+  "workflow": {
+    "00_share_data": {
+      "status": "complete"
+    },
+    "01_set_rotation_crop": {
+      "status": "complete"
+    }
+  },
+  "outputs": {},
+  "warnings": [],
+  "orientation": {
+    "transpose_preview": true,
+    "rotation_angle": -90.0
+  },
+  "cropping": {
+    "rowrng": [
+      1,
+      58
+    ],
+    "colrng": [
+      3,
+      163
+    ]
+  }
+}

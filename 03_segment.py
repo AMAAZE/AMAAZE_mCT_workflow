@@ -13,7 +13,7 @@ This step:
 - suggested row/column divider locations based on automated detection,
 - allows the user to manually define row/column dividers overrides per tier,
 - computes specimen extraction boxes,
-- and saves the extraction plan to CT<scan_num>.csv
+- and saves the extraction plan to a .csv
 for downstream extraction and surfacing.
 
 """
@@ -25,7 +25,7 @@ for downstream extraction and surfacing.
 from utils import *
 
 # ============================================================
-# Load metadata and subvolume
+# Load metadata
 # ============================================================
 
 print()
@@ -38,12 +38,22 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
+# Extract data from metadata file needed for this workflow
 scanpath = metadata["paths"]["scanpath"]
 output_path = metadata["paths"]["output_path"]
 layoutfile = metadata["paths"]["layoutfile"]
 
 dataset_name = metadata["dataset_name"]
 scan_num = metadata["scan_num"]
+
+rotation_angle = metadata["orientation"]["rotation_angle"]
+transpose_preview = metadata["orientation"]["transpose_preview"]
+rowrng = metadata["cropping"]["rowrng"]
+colrng = metadata["cropping"]["colrng"]
+
+# ============================================================
+# Load subvolume (npz) from 02
+# ============================================================
 
 npz_fname = metadata["outputs"]["npz_file"]
 
@@ -53,27 +63,10 @@ if not os.path.exists(npz_fname):
         "Run 02_build_volume.py first."
     )
 
-saveddata = np.load(npz_fname)
+npzdata = np.load(npz_fname)
 
-vol = saveddata["vol"]
-rowrng = saveddata["rowrng"]
-colrng = saveddata["colrng"]
-rotation_angle = float(saveddata["ang"])
-origsz = saveddata["origsz"]
-rem = saveddata["remainder"]
-transpose_preview = bool(saveddata["transpose_preview"])
-
-rowsz = rowrng[1] - rowrng[0]
-colsz = colrng[1] - colrng[0]
-
-metadata["workflow"]["03_segment"]["inputs"] = {
-    "npz_file": npz_fname,
-    "volume_shape": list(vol.shape),
-    "rowrng": rowrng.tolist(),
-    "colrng": colrng.tolist(),
-    "rotation_angle": float(rotation_angle),
-    "transpose_preview": transpose_preview,
-}
+# Extract data for this workflow from npz
+vol = npzdata["vol"]
 
 # ============================================================
 # Load scan layout CSV
@@ -134,9 +127,10 @@ for tier_id in range(1, n_tiers + 1):
         "n_cols": n_cols,
     }
 
+# tier_ids are the tier numbers present in the csv layout.
+# tier_mask marks which of those tiers contain at least one specimen.
 tier_ids = np.array(sorted(layout_by_tier.keys()))
 tier_mask = np.array([np.any(layout_by_tier[t]["mask"]) for t in tier_ids])
-
 
 # ============================================================
 # Tier Division
@@ -181,27 +175,25 @@ for vvv in suggested_tier_boundaries:
     plt.axvline(x=vvv, color='green', linestyle='--', linewidth=2)
 
 print(
-    "green lines are suggested tier boundaries. \n"
-    "Click final tier boundary positions only if the suggestions are not correct. \n"
-    "# tiers is %1d, # nonempty tiers is %2d \n" % (n_tiers, np.sum(tier_mask))
+    "\nA tier-boundary review window is opening.\n"
+    "Green lines show the suggested tier boundaries.\n"
+    "If the suggestions look correct, do not click anything.\n"
+    "If they are incorrect, click the graph where the tier boundaries should be.\n"
+    "Each click will create a red divider line.\n"
+    f"Expected tiers: {n_tiers}\n"
+    f"Non-empty tiers: {np.sum(tier_mask)}\n"
 )
         
-clicked_x = []  # store clicked x-values
-
-def onclick(event):
-    if event.inaxes:
-        x_click = event.xdata
-        clicked_x.append(x_click)
-        # Draw vertical line
-        event.inaxes.axvline(x_click, color="r", linestyle="--")
-        plt.draw()
-        print(f"Clicked x = {x_click:.2f}")
-
-cid = fig.canvas.mpl_connect("button_press_event", onclick)
+clicked_x = collect_tier_boundary_clicks(fig, plt.gca())
 
 plt.show(block=False)        
         
-input("please press enter once done (no clicks = use suggested values) \n")
+input(
+    "Close the tier-boundary review window, then press Enter here "
+    "(no clicks = accept suggested boundaries).\n"
+)
+
+plt.close(fig)
 
 if len(clicked_x) > 0:
     ex = np.array(clicked_x).astype(int)
@@ -215,10 +207,6 @@ else:
     print("using ", ex)
 
 tier_metadata = {}
-metadata["workflow"]["03_segment"]["tiers"] = tier_metadata
-tier_metadata["tier_boundaries"] = [int(v) for v in ex]
-tier_metadata["n_detected_tiers"] = len(ex) - 1
-tier_metadata["tier_detection_method"] = tier_detection_method
 
 # Convert the selected tier boundary positions into start/end ranges.
 # Each range is one tier in the reduced .npz volume.
@@ -231,23 +219,69 @@ ranges = [
 # Scan order and layout order are not always the same.
 # If configured, reverse the detected tier order before matching
 # tiers to the layout CSV.
+# Preview detected tier order before matching tiers to layout.
+tier_preview_images = [
+    vol[start:end, :, :].mean(0)
+    for start, end in ranges
+]
 
+fig, axs = plt.subplots(1, len(tier_preview_images), figsize=(5 * len(tier_preview_images), 5))
+
+if len(tier_preview_images) == 1:
+    axs = [axs]
+
+for i, tier_image in enumerate(tier_preview_images):
+    axs[i].imshow(tier_image, cmap="gray")
+    axs[i].set_title(f"Detected tier {i + 1}\nz={ranges[i][0]}:{ranges[i][1]}")
+    axs[i].axis("off")
+
+plt.suptitle("Detected tier order preview")
+plt.tight_layout()
+
+print()
+print("A detected-tier preview window is opening.")
+print("Use this preview to compare detected tier order against the layout CSV.")
+print("After reviewing the preview, close the preview window.")
+print("Then answer the tier-order question in the terminal.")
+print()
+
+plt.show(block=False)
+
+input("Press Enter after closing the detected-tier preview window...")
+
+plt.close(fig)
+
+reverse_detected_tier_order = ask_yes_no(
+    "Do the detected tiers appear inverted relative to the layout CSV?\n"
+    "Choose yes if detected tier 1 looks like the bottom tier in the CSV.",
+    default="n"
+)
+
+tier_metadata["tier_boundaries"] = [int(v) for v in ex]
+tier_metadata["n_detected_tiers"] = len(ex) - 1
+tier_metadata["tier_detection_method"] = tier_detection_method
 tier_metadata["reverse_detected_tier_order"] = reverse_detected_tier_order
 
 if reverse_detected_tier_order:
     ranges = ranges[::-1]
 
+# ============================================================
 # Remove tiers that contain no specimens according to the layout file.
-
+# ============================================================
 active_tiers = np.arange(n_tiers)[tier_mask]
 ranges = [ranges[i] for i in active_tiers]
+
+active_tier_ids = tier_ids[active_tiers]
 
 tier_metadata["active_tier_indices"] = [int(v) for v in active_tiers]
 tier_metadata["active_tier_ranges"] = [
     [int(start), int(end)] for start, end in ranges
 ]
 
+
+# ============================================================
 # Extract the reduced-volume data for each active tier.
+# ============================================================
 # Downstream divider and cell segmentation operate in .npz space.
 
 SLICES = [
@@ -257,12 +291,6 @@ SLICES = [
 
 # Mean projection of each active tier used for divider detection.
 I = [x.mean(0) for x in SLICES]
-
-# Final extraction instructions.
-# Written to CT<scan_num>.csv and used by 04_surface.py.
-
-EXTRACTS = []
-
 
 # ============================================================
 # Per-tier geometric normalization via rotation
@@ -303,8 +331,6 @@ for i in range(len(I)):
         "angle_step": 0.25,
         "best_score": float(rotation_scores.max()),
     })
-    
-metadata["workflow"]["03_segment"]["tier_rotations"] = rotation_metadata
     
 # ============================================================
 # Per-tier divider detection
@@ -482,7 +508,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
     )
 
     divider_proposals.append({
-        "tier_id": int(tier_ids[i]),
+        "tier_id": int(active_tier_ids[i]),
         "proposed_rows": np.array(row_centers).astype(int),
         "proposed_cols": np.array(col_centers).astype(int),
         "review_choice": review_choice.strip().lower()
@@ -498,15 +524,16 @@ final_divider_metadata = []
 
 for i, normalized_image in enumerate(normalized_tier_images):
 
-    tier_id = int(tier_ids[i])
+    tier_id = int(active_tier_ids[i])
 
     proposed_rows = divider_proposals[i]["proposed_rows"]
     proposed_cols = divider_proposals[i]["proposed_cols"]
 
     if divider_proposals[i]["review_choice"] == "m":
-
         final_rows, final_cols = review_dividers(
             image=normalized_image,
+            proposed_rows=proposed_rows,
+            proposed_cols=proposed_cols,
             title=f"Tier {tier_id}: divider review"
         )
 
@@ -515,6 +542,30 @@ for i, normalized_image in enumerate(normalized_tier_images):
         final_rows = proposed_rows
         final_cols = proposed_cols
     
+    while True:
+        expected_rows = layout_by_tier[tier_id]["n_rows"]
+        expected_cols = layout_by_tier[tier_id]["n_cols"]
+
+        accepted_rows = len(final_rows) + 1
+        accepted_cols = len(final_cols) + 1
+
+        if accepted_rows == expected_rows and accepted_cols == expected_cols:
+                break
+
+        print()
+        print("The accepted dividers do not match the layout.")
+        print(f"Layout expects {expected_rows} rows and {expected_cols} columns.")
+        print(f"Current dividers create {accepted_rows} rows and {accepted_cols} columns.")
+        print("Please review this tier again.")
+        print()
+
+        final_rows, final_cols = review_dividers(
+            image=normalized_image,
+            proposed_rows=final_rows,
+            proposed_cols=final_cols,
+            title=f"Tier {tier_id}: divider review"
+        )
+                
     final_divider_metadata.append({
         "tier_id": tier_id,
         "proposed_row_dividers": proposed_rows.tolist(),
@@ -529,19 +580,60 @@ for i, normalized_image in enumerate(normalized_tier_images):
         ),
     })
 
-metadata["workflow"]["03_segment"]["final_dividers"] = final_divider_metadata
-
-
+    
 # ============================================================
-# Future work: final extraction handoff
+# Write extraction plan for surfacing
 # ============================================================
 
-save_metadata(metadata_path, metadata)
+extraction_plan_csv = os.path.join(
+    output_path,
+    f"{dataset_name}_scan{scan_num}_extraction_plan.csv"
+)
 
-"""
-NOTE (dev)
-write the tier/grid/divider information in the exact form needed by downstream scripts, either preserving the old expected format or creating a cleaner format plus compatibility export.
-"""
+extraction_rows = []
+
+for i, divider_info in enumerate(final_divider_metadata):
+
+    tier_id = divider_info["tier_id"]
+    z_start, z_end = ranges[i]
+
+    tier_layout = layout_by_tier[tier_id]["layout"]
+
+    row_dividers = np.array(divider_info["final_row_dividers"]).astype(int)
+    col_dividers = np.array(divider_info["final_col_dividers"]).astype(int)
+    
+    row_dividers = remove_border_dividers(row_dividers, I[i].shape[0], border_margin_fraction=0.03)
+    col_dividers = remove_border_dividers(col_dividers, I[i].shape[1], border_margin_fraction=0.03)
+
+    row_edges = np.concatenate(([0], row_dividers, [I[i].shape[0]]))
+    col_edges = np.concatenate(([0], col_dividers, [I[i].shape[1]]))
+    
+    tier_rotation_angle = rotation_metadata[i]["rotation_angle"]
+
+    for row_idx in range(tier_layout.shape[0]):
+        for col_idx in range(tier_layout.shape[1]):
+
+            specimen_id = tier_layout[row_idx, col_idx]
+
+            if specimen_id == 0:
+                continue
+
+            extraction_rows.append({
+                "specimen_id": specimen_id,
+                "tier_id": tier_id,
+                "row_id": row_idx + 1,
+                "col_id": col_idx + 1,
+                "z_start": int(z_start),
+                "z_end": int(z_end),
+                "row_start": int(row_edges[row_idx]),
+                "row_end": int(row_edges[row_idx + 1]),
+                "col_start": int(col_edges[col_idx]),
+                "col_end": int(col_edges[col_idx + 1]),
+                "tier_rotation_angle": float(tier_rotation_angle),
+            })
+
+extraction_plan = pd.DataFrame(extraction_rows)
+extraction_plan.to_csv(extraction_plan_csv, index=False)
 
 # ============================================================
 # Update metadata
@@ -557,10 +649,15 @@ metadata["workflow"]["03_segment"] = {
         "rotation_angle": float(rotation_angle),
         "transpose_preview": transpose_preview,
     },
+    "outputs": {
+        "extraction_plan_csv": extraction_plan_csv,
+    },
     "tiers": tier_metadata,
     "tier_rotations": rotation_metadata,
     "final_dividers": final_divider_metadata,
 }
+
+metadata["outputs"]["extraction_plan_csv"] = extraction_plan_csv
 
 save_metadata(metadata_path, metadata)
 
@@ -568,7 +665,7 @@ save_metadata(metadata_path, metadata)
 # Confirm completion
 # ============================================================
 print()
-print("Subvolume created.")
+print("Segmentation complete.")
 print("Metadata updated:")
 print(metadata_path)
 print()

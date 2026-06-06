@@ -91,7 +91,8 @@ def save_metadata(metadata_path, metadata):
         
 def find_metadata_file_in_dataset(dataset_path):
     """
-    Find the metadata file inside a dataset folder.
+    Find the current workflow metadata file inside a dataset folder.
+    Prefer metadata stored in an AMAAZE output folder.
     """
 
     dataset_path = normalize_path(dataset_path)
@@ -109,14 +110,20 @@ def find_metadata_file_in_dataset(dataset_path):
             "Please run 00_share_data.py for this dataset before continuing."
         )
 
-    if len(matches) > 1:
-        raise RuntimeError(
-            "More than one metadata file was found inside that dataset folder. "
-            "Please make sure you are using the correct dataset folder or remove old duplicate metadata files."
-        )
+    amaaze_matches = [
+        path for path in matches
+        if "_AMAAZE_outputs" in os.path.basename(os.path.dirname(path))
+    ]
 
+    if len(amaaze_matches) == 1:
+        return amaaze_matches[0]
+
+    if len(amaaze_matches) > 1:
+        amaaze_matches.sort(key=os.path.getmtime, reverse=True)
+        return amaaze_matches[0]
+
+    matches.sort(key=os.path.getmtime, reverse=True)
     return matches[0]
-
 
 # ============================================================
 # USER PROMPT HELPERS
@@ -362,16 +369,18 @@ def collect_crop_bounds(image):
     print()
     print("Click two opposite corners around the area you want to keep.")
     print("For example: upper-left and lower-right.")
+    print("After selecting two corners, close the image window.")
+    print("A crop preview will appear for confirmation.")
     print()
 
     fig, ax = plt.subplots()
     ax.imshow(image, cmap="gray")
-    ax.set_title("Click two opposite crop corners, then press Enter in the terminal.")
+    ax.set_title("Click two opposite crop corners, then close this window.")
     ax.axis("off")
 
     clicks = []
 
-    def onclick(event):
+    def on_crop_corner_click(event):
         if event.inaxes != ax:
             return
 
@@ -390,10 +399,13 @@ def collect_crop_bounds(image):
 
         print(f"Crop corner {len(clicks)}/2: x={x}, y={y}")
 
-    fig.canvas.mpl_connect("button_press_event", onclick)
+    fig.canvas.mpl_connect("button_press_event", on_crop_corner_click)
     plt.show(block=False)
-
-    input("Press Enter after selecting two crop corners...")
+    
+    input(
+        "Click two crop corners in the image window. "
+        "After both clicks appear, close the image window, then press Enter here..."
+    )
 
     plt.close(fig)
 
@@ -404,6 +416,11 @@ def collect_crop_bounds(image):
         print()
         return None, None
 
+    print()
+    print("Crop selection received.")
+    print("Opening crop preview...")
+    print()
+    
     xs = [pt[0] for pt in clicks]
     ys = [pt[1] for pt in clicks]
 
@@ -653,7 +670,7 @@ def review_dividers(
     clicked_rows = []
     clicked_cols = []
 
-    def onclick(event):
+    def on_divider_review_click(event):
 
         if event.inaxes != ax:
             return
@@ -672,7 +689,7 @@ def review_dividers(
             ax.axvline(col, color="blue")
             fig.canvas.draw_idle()
 
-    fig.canvas.mpl_connect("button_press_event", onclick)
+    fig.canvas.mpl_connect("button_press_event", on_divider_review_click)
 
     plt.show(block=False)
 
@@ -760,4 +777,112 @@ def collapse_candidate_bands(candidate_idxs, max_band_gap=2):
 
     return bands, band_centers
 
+def collect_tier_boundary_clicks(fig, ax):
+    clicked_x = []
 
+    def on_tier_boundary_click(event):
+        if event.inaxes != ax:
+            return
+        if event.xdata is None:
+            return
+
+        x_click = event.xdata
+        clicked_x.append(x_click)
+        ax.axvline(x_click, color="red", linestyle="--")
+        fig.canvas.draw_idle()
+        print(f"Clicked tier boundary x = {x_click:.2f}")
+
+    fig.canvas.mpl_connect("button_press_event", on_tier_boundary_click)
+    return clicked_x
+    
+def remove_border_dividers(dividers, max_value, border_margin_fraction=0.03):
+    dividers = np.array(dividers).astype(int)
+    border_margin = int(max_value * border_margin_fraction)
+
+    return dividers[
+        (dividers > border_margin) &
+        (dividers < max_value - border_margin)
+    ]
+    
+# ============================================================
+# FUNCTIONS USED BY 03_segment.py
+# ============================================================
+    
+    
+def estimate_iso_from_click_samples(image, min_clicks_per_class=3):
+    """
+    Estimate a baseline isovalue from user-selected air/background
+    and specimen/material points.
+    """
+
+    def collect_iso_samples(label, color):
+        print()
+        print(f"Click at least {min_clicks_per_class} obvious {label} points.")
+        print("Use points that clearly represent that category.")
+        print("Close the window when finished, then press Enter in the terminal.")
+        print()
+
+        fig, ax = plt.subplots()
+        ax.imshow(image, cmap="gray")
+        ax.set_title(f"Click {label} points, then close this window")
+        ax.axis("off")
+
+        samples = []
+
+        def on_iso_sample_click(event):
+            if event.inaxes != ax:
+                return
+            if event.xdata is None or event.ydata is None:
+                return
+
+            x = int(round(event.xdata))
+            y = int(round(event.ydata))
+            value = float(image[y, x])
+
+            samples.append({"x": x, "y": y, "value": value})
+            ax.plot(x, y, "o", color=color)
+            fig.canvas.draw_idle()
+
+            print(f"{label} sample {len(samples)}: x={x}, y={y}, value={value}")
+
+        fig.canvas.mpl_connect("button_press_event", on_iso_sample_click)
+        plt.show(block=False)
+
+        input(f"Press Enter after selecting {label} points and closing the window...")
+
+        plt.close(fig)
+
+        if len(samples) < min_clicks_per_class:
+            raise RuntimeError(
+                f"ISO helper needs at least {min_clicks_per_class} {label} samples."
+            )
+
+        return samples
+
+    air_samples = collect_iso_samples("air/background", "cyan")
+    specimen_samples = collect_iso_samples("specimen/material", "red")
+
+    air_values = np.array([s["value"] for s in air_samples], dtype=float)
+    specimen_values = np.array([s["value"] for s in specimen_samples], dtype=float)
+
+    air_mean = float(np.mean(air_values))
+    specimen_mean = float(np.mean(specimen_values))
+    iso_estimate = float((air_mean + specimen_mean) / 2)
+
+    print()
+    print(f"Average air/background grayscale value: {air_mean:.2f}")
+    print(f"Average specimen/material grayscale value: {specimen_mean:.2f}")
+    print(f"Estimated baseline ISO: {iso_estimate:.2f}")
+    print()
+
+    iso_metadata = {
+        "method": "click_sample_midpoint",
+        "min_clicks_per_class": min_clicks_per_class,
+        "air_background_samples": air_samples,
+        "specimen_material_samples": specimen_samples,
+        "air_background_mean": air_mean,
+        "specimen_material_mean": specimen_mean,
+        "estimated_iso": iso_estimate,
+    }
+
+    return iso_estimate, iso_metadata

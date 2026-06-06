@@ -1,0 +1,180 @@
+{
+  "scan_num": 1,
+  "user_config_snapshot": {
+    "scanpath": "./test_data_synthetic",
+    "slicepath": "./test_data_synthetic/CT_1_synthetic_slices",
+    "scan_num": 1,
+    "layoutfile": "./test_data_synthetic/layout_CT_1_synthetic.csv",
+    "n_dividers_row": 2,
+    "n_dividers_col": 2,
+    "row_dividers_override": [
+      75,
+      150
+    ],
+    "col_dividers_override": [
+      75,
+      150
+    ],
+    "iso_thresholds_override": null,
+    "slice_index_fraction": 0.51,
+    "allow_slice_gaps": true,
+    "ang2rot": 0,
+    "rowrng": [
+      32,
+      320
+    ],
+    "colrng": [
+      32,
+      320
+    ],
+    "transpose_preview": false,
+    "zwindow": 1,
+    "iso": 3000,
+    "padding": 5,
+    "calibration_filename": null,
+    "voxel_size_mm": 0.079,
+    "voxel_spacing_mm": null,
+    "extract_ncores": null,
+    "surface_ncores": null,
+    "clean_ncores": null,
+    "dust_cutoff": 1000,
+    "hole_tolerance": 0
+  },
+  "workflow": {
+    "02_build_volume": {
+      "input_slices": {
+        "n_slices": 455,
+        "first_slice": "synthetic_ct_0000.tif",
+        "last_slice": "synthetic_ct_0454.tif"
+      },
+      "processing": {
+        "zwindow": 1,
+        "remainder": 0,
+        "ang2rot": 0,
+        "rowrng": [
+          32,
+          320
+        ],
+        "colrng": [
+          32,
+          320
+        ],
+        "transpose_preview": false
+      },
+      "outputs": {
+        "npz_file": "./test_data_synthetic/ct1_new.npz",
+        "reduced_shape": [
+          455,
+          225,
+          225
+        ]
+      }
+    },
+    "03_segment": {
+      "inputs": {
+        "npz_file": "./test_data_synthetic/ct1_new.npz",
+        "volume_shape": [
+          455,
+          225,
+          225
+        ],
+        "rowrng": [
+          32,
+          320
+        ],
+        "colrng": [
+          32,
+          320
+        ],
+        "ang2rot": 0.0,
+        "transpose_preview": false
+      },
+      "tiers": {
+        "tier_boundaries": [
+          1,
+          455
+        ],
+        "n_detected_tiers": 1,
+        "tier_detection_method": "manual_override",
+        "reverse_detected_tier_order": true,
+        "active_tier_indices": [
+          0
+        ],
+        "active_tier_ranges": [
+          [
+            1,
+            455
+          ]
+        ]
+      },
+      "tier_rotations": [
+        {
+          "tier_index": 0,
+          "rotation_angle": 0.0,
+          "angle_min": -5,
+          "angle_max": 5,
+          "angle_step": 0.25,
+          "best_score": 3.73446028645671
+        }
+      ],
+      "divider_detection": [
+        {
+          "tier_index": 0,
+          "tier_id": 1,
+          "layout_shape": [
+            3,
+            3
+          ],
+          "row_bands": [
+            [
+              2,
+              7
+            ],
+            [
+              70,
+              81
+            ],
+            [
+              145,
+              156
+            ],
+            [
+              220,
+              223
+            ]
+          ],
+          "col_bands": [
+            [
+              2,
+              7
+            ],
+            [
+              70,
+              81
+            ],
+            [
+              145,
+              156
+            ],
+            [
+              220,
+              223
+            ]
+          ],
+          "row_profile_cutoff": 0.9392210880333869,
+          "col_profile_cutoff": 0.9392202113859351
+        }
+      ],
+      "final_dividers": [
+        {
+          "tier_id": 1,
+          "final_row_dividers": [],
+          "final_col_dividers": [],
+          "nondivider_points": []
+        }
+      ]
+    }
+  },
+  "outputs": {},
+  "warnings": []
+}
