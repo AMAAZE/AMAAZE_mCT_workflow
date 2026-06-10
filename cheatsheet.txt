@@ -1,3 +1,22 @@
+Sam's quickstart: 
+
+1. Open a terminal in the `AMAAZE_mCT_workflow` folder. (click in filepath and type cmd) 
+2. Check the current repository status: git status (It will show you which branch you are on an if you are uptodate or if you need to pull)
+3. If needed, switch to the development branch: git checkout refactor-segmentation-interface
+4. If needed, pull the latest changes from GitHub: git pull
+5. Re-check status: git status
+6. Activate the virtual environment: ..\ .venv\Scripts\activate
+7. Start the workflow: python 00_share_data.py
+This should activate the workflow or throw an error referencing requirements.txt and or AMAAZETools
+If it throws an error message look at the Quickstart for the commands to resolve the issue.
+Otherwise, happy surfacing!
+
+What to expect when you start the flow: 
+When you start the first script (00), you will be asked for all the info listed below except the isovalue. 
+00 will record everything to metadata so that the only thing you need to provide in subsequent script, i.e. 01-05, is the dataset (foldername). 
+
+-------------------------------------------------------------------------------------------------------------------------
+
 TEST Synthetic data
 
 Dataset (folder name):

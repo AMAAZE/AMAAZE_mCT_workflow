@@ -1,14 +1,13 @@
 {
-  "dataset_name": "synthetic_data",
-  "scan_num": 1,
-  "paths": {
-    "scanpath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic",
-    "slicepath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/CT_1_synthetic_slices",
-    "layoutfile": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/layout_CT_1_synthetic.csv",
-    "output_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs",
-    "metadata_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs/synthetic_data_scan1_metadata.json"
-  },
-  "input_slices": {
+  "00_share_data": {
+    "status": "complete",
+    "dataset_name": "synthetic_data",
+    "scan_num": 1,
+    "scanpath": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic",
+    "slicepath": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\CT_1_synthetic_slices",
+    "layoutfile": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\layout_CT_1_synthetic.csv",
+    "output_path": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs",
+    "metadata_path": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\synthetic_data_scan1_metadata.json",
     "supported_extensions": [
       ".tif",
       ".tiff",
@@ -20,142 +19,164 @@
     "last_slice": "synthetic_ct_0454.tif",
     "first_slice_index": 0,
     "last_slice_index": 454,
-    "slice_indices_are_consecutive": true
-  },
-  "user_choices": {
+    "slice_indices_are_consecutive": true,
     "slice_index_fraction": 0.5,
     "voxel_size_mm": 0.079,
-    "voxel_spacing_mm": null
+    "voxel_spacing_mm": null,
+    "is_isotropic": true,
+    "runtime_seconds": 152.24566350000168
   },
-  "workflow": {
-    "00_share_data": {
-      "status": "complete"
-    },
-    "01_set_rotation_crop": {
-      "status": "complete"
-    },
-    "02_build_volume": {
-      "status": "complete",
-      "input_slices": {
-        "n_slices": 455,
-        "first_slice": "synthetic_ct_0000.tif",
-        "last_slice": "synthetic_ct_0454.tif"
-      },
-      "processing": {
-        "zwindow": 1,
-        "remainder": 0,
-        "rotation_angle": 0.0,
-        "rowrng": [
-          34,
-          323
-        ],
-        "colrng": [
-          34,
-          322
-        ],
-        "transpose_preview": false
-      },
-      "outputs": {
-        "npz_file": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs/synthetic_data_scan1_subvolume.npz",
-        "reduced_shape": [
-          455,
-          225,
-          224
+  "01_set_rotation_crop": {
+    "status": "complete",
+    "transpose_preview": false,
+    "rotation_angle": 0.0,
+    "rowrng": [
+      32,
+      316
+    ],
+    "colrng": [
+      32,
+      319
+    ],
+    "runtime_seconds": 86.71612470000036
+  },
+  "02_build_subvolume": {
+    "status": "complete",
+    "zwindow": 1,
+    "remainder": 0,
+    "subvolume_file": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\synthetic_data_scan1_subvolume.npz",
+    "entire_subvolume_shape": [
+      455,
+      223,
+      225
+    ],
+    "subvolume_slice_shape": [
+      223,
+      225
+    ],
+    "runtime_seconds": 14.651746800002002
+  },
+  "03_segment": {
+    "status": "complete",
+    "extraction_plan_csv": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\synthetic_data_scan1_extraction_plan.csv",
+    "n_tiers_expected": 1,
+    "n_active_tiers": 1,
+    "n_expected_specimens": 5,
+    "n_extracted_specimens": 5,
+    "n_extraction_regions": 5,
+    "tier_segmentation": {
+      "tier_boundaries": [
+        24,
+        427
+      ],
+      "n_detected_tiers": 1,
+      "tier_detection_method": "manual_override",
+      "reverse_detected_tier_order": false,
+      "active_tier_indices": [
+        0
+      ],
+      "active_tier_ranges": [
+        [
+          24,
+          427
         ]
-      }
+      ]
     },
-    "03_segment": {
-      "status": "complete",
-      "inputs": {
-        "npz_file": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs/synthetic_data_scan1_subvolume.npz",
-        "volume_shape": [
-          455,
-          225,
-          224
-        ],
-        "rowrng": [
-          34,
-          323
-        ],
-        "colrng": [
-          34,
-          322
-        ],
-        "rotation_angle": 0.0,
-        "transpose_preview": false
-      },
-      "outputs": {
-        "extraction_plan_csv": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs/synthetic_data_scan1_extraction_plan.csv"
-      },
-      "tiers": {
-        "tier_boundaries": [
-          46,
-          455
-        ],
-        "n_detected_tiers": 1,
-        "tier_detection_method": "automatic_peaks",
-        "reverse_detected_tier_order": false,
-        "active_tier_indices": [
-          0
-        ],
-        "active_tier_ranges": [
-          [
-            46,
-            455
-          ]
-        ]
-      },
+    "tier_normalization": {
+      "rotation_method": "estimate_grid_rotation_by_coherence",
+      "angle_min": -5,
+      "angle_max": 5,
+      "angle_step": 0.25,
       "tier_rotations": [
         {
-          "tier_index": 0,
+          "tier_id": 1,
           "rotation_angle": 0.0,
           "angle_min": -5,
           "angle_max": 5,
           "angle_step": 0.25,
-          "best_score": 3.7425164754652536
+          "best_score": 3.7358053711106063
         }
-      ],
-      "final_dividers": [
+      ]
+    },
+    "divider_review": {
+      "review_method": "automated_proposal_with_manual_override",
+      "tier_divider_definitions": [
         {
           "tier_id": 1,
           "proposed_row_dividers": [
-            73,
-            148
+            76,
+            151
           ],
           "proposed_col_dividers": [
-            73,
-            148
+            76,
+            151
           ],
           "final_row_dividers": [
-            73,
-            148
+            76,
+            151
           ],
           "final_col_dividers": [
-            73,
-            148
+            76,
+            151
           ],
           "divider_method": "automatic_accepted"
         }
       ]
+    },
+    "runtime_seconds": 46.62226870000086
+  },
+  "04_surface": {
+    "status": "complete",
+    "mesh_folder": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\Meshes",
+    "surfacing_errors_csv": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\surfacing_errors.csv",
+    "n_specimens_extracted": 5,
+    "n_meshes_generated": 5,
+    "n_surfacing_errors": 0,
+    "surfacing_parameters": {
+      "iso": 3000.0,
+      "iso_method": "manual_entry",
+      "iso_helper": null,
+      "padding": 5
+    },
+    "parallelization": {
+      "extract_num_cores": 20,
+      "extract_num_cores_method": "default",
+      "surface_num_cores": 20,
+      "surface_num_cores_method": "default"
+    },
+    "runtime_seconds": {
+      "interactive_setup": 26.958553200001916,
+      "extraction": 113.32320049999907,
+      "surfacing": 0.20591369999965536,
+      "total_runtime_seconds": 140.4876686000025,
+      "automated_runtime_seconds": 113.52911419999873
     }
   },
-  "outputs": {
-    "npz_file": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs/synthetic_data_scan1_subvolume.npz",
-    "extraction_plan_csv": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/synthetic_data_scan1_AMAAZE_outputs/synthetic_data_scan1_extraction_plan.csv"
-  },
-  "warnings": [],
-  "orientation": {
-    "transpose_preview": false,
-    "rotation_angle": 0.0
-  },
-  "cropping": {
-    "rowrng": [
-      34,
-      323
-    ],
-    "colrng": [
-      34,
-      322
-    ]
+  "05_clean_meshes": {
+    "status": "complete",
+    "input_mesh_folder": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\Meshes",
+    "clean_mesh_folder": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\Clean_Meshes",
+    "mesh_cleaning_log_csv": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\mesh_cleaning_log.csv",
+    "mesh_cleaning_parameters": {
+      "dust_cutoff": 20,
+      "hole_tolerance": 0
+    },
+    "parallelization": {
+      "num_cores": 6,
+      "clean_num_cores_method": "default"
+    },
+    "n_input_meshes": 5,
+    "n_meshes_cleaned": 5,
+    "n_mesh_cleaning_failures": 0,
+    "runtime_seconds": {
+      "interactive_setup": 23.041978199998994,
+      "automated_mesh_cleaning": 1.513285299999552,
+      "total_runtime_seconds": 24.555263999998715
+    },
+    "run_report_template_md": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\final_run_report_template.md",
+    "run_report_markdown": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_synthetic\\synthetic_data_scan1_AMAAZE_outputs\\final_run_report_synthetic_data_scan1_20260610_100720.md",
+    "run_report_pdf": null,
+    "report_timestamp": "20260610_100720",
+    "report_timestamp_human": "June 10, 2026 at 10:07 AM"
   }
 }

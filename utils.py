@@ -1216,7 +1216,7 @@ def extract_specimen_subvolume_slice(
             image[
                 specimen_row_bounds[0]:specimen_row_bounds[1],
                 specimen_col_bounds[0]:specimen_col_bounds[1]
-            ].T[None, :, :]
+            ][None, :, :]
         )
 
 
