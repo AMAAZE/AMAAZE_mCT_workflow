@@ -18,18 +18,12 @@ Developer-facing module. End users should not need to edit this file.
 
 import json
 import os
-import time
-import sys
-import argparse
 import multiprocessing
 import timeit
-import glob
 import re
 
 import numpy as np
 import pandas as pd
-import scipy
-import scipy.stats as stats
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 
@@ -37,23 +31,18 @@ import cv2 as cv
 import skimage.io as io
 import pydicom
 
-# NOTE:
-# Duplicate AMAAZE dicom imports are currently present.
-# This should be consolidated in a future cleanup.
+import datetime
+import shutil
+import subprocess
+
 import amaazetools.trimesh as tm
-from amaazetools.dicom import *
 from amaazetools import dicom
 
-from ast import literal_eval
 from joblib import Parallel, delayed
-
-from numpy import concatenate as cat
 from npy_append_array import NpyAppendArray
-from matplotlib import patches
+
 from skimage import measure
-from skimage.filters import gaussian
 from skimage.transform import rotate, rescale
-from scipy.ndimage import convolve, label
 from scipy.signal import find_peaks
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse import csr_matrix
@@ -88,6 +77,270 @@ def save_metadata(metadata_path, metadata):
 
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
+        
+def count_csv_rows(csv_path):
+    """
+    Count data rows in a CSV file. Returns 0 if the file is missing or empty.
+    """
+    if not os.path.exists(csv_path):
+        return 0
+
+    try:
+        df = pd.read_csv(csv_path)
+    except pd.errors.EmptyDataError:
+        return 0
+
+    return len(df)
+
+
+def current_timestamp_for_filename():
+    """
+    Return a timestamp safe for filenames.
+    """
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def render_text_template(template_path, values):
+    """
+    Fill a simple markdown template using {{ key }} placeholders.
+    """
+    with open(template_path, "r") as f:
+        text = f.read()
+
+    for key, value in values.items():
+        text = text.replace("{{ " + key + " }}", str(value))
+
+    return text
+
+
+def convert_markdown_text_to_pdf(markdown_text, pdf_path):
+    """
+    Convert rendered markdown text to PDF using pandoc.
+    Returns True if the PDF was created, False otherwise.
+    """
+    if shutil.which("pandoc") is None:
+        return False
+
+    try:
+        subprocess.run(
+            ["pandoc", "-", "-o", pdf_path],
+            input=markdown_text,
+            text=True,
+            check=True
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def format_runtime(seconds):
+    """
+    Convert runtime seconds into a human-readable report string.
+    """
+    seconds = float(seconds)
+
+    if seconds < 120:
+        return f"{seconds:.1f} sec"
+
+    minutes = seconds / 60
+
+    if minutes < 120:
+        return f"{minutes:.1f} min"
+
+    hours = minutes / 60
+    return f"{hours:.2f} hr"
+
+def write_final_run_report(metadata):
+    """
+    Fill the final run report template and write a timestamped PDF report
+    to the dataset output folder.
+
+    The markdown template stays in the workflow folder.
+    """
+    step00 = metadata["00_share_data"]
+    step01 = metadata["01_set_rotation_crop"]
+    step02 = metadata["02_build_subvolume"]
+    step03 = metadata["03_segment"]
+    step04 = metadata["04_surface"]
+    step05 = metadata["05_clean_meshes"]
+
+    output_path = step00["output_path"]
+    dataset_name = step00["dataset_name"]
+    scan_num = step00["scan_num"]
+
+    timestamp = current_timestamp_for_filename()
+    
+    report_timestamp_human = datetime.datetime.now().strftime(
+    "%B %d, %Y at %I:%M %p"
+    )
+
+    template_path = os.path.join(
+        os.path.dirname(__file__),
+        "final_run_report_template.md"
+    )
+
+    report_base = f"final_run_report_{dataset_name}_scan{scan_num}_{timestamp}"
+    markdown_path = os.path.join(output_path, report_base + ".md")
+    pdf_path = os.path.join(output_path, report_base + ".pdf")
+
+    tier_segmentation = step03["tier_segmentation"]
+    tier_normalization = step03["tier_normalization"]
+    divider_review = step03["divider_review"]
+    surfacing_parameters = step04["surfacing_parameters"]
+    surfacing_parallelization = step04["parallelization"]
+    cleaning_parameters = step05["mesh_cleaning_parameters"]
+    cleaning_parallelization = step05["parallelization"]
+
+    total_interactive_runtime = (
+        step00["runtime_seconds"]
+        + step01["runtime_seconds"]
+        + step03["runtime_seconds"]
+        + step04["runtime_seconds"]["interactive_setup"]
+        + step05["runtime_seconds"]["interactive_setup"]
+    )
+
+    total_automated_runtime = (
+        step02["runtime_seconds"]
+        + step04["runtime_seconds"]["automated_runtime_seconds"]
+        + step05["runtime_seconds"]["automated_mesh_cleaning"]
+    )
+
+    total_runtime = (
+        total_interactive_runtime
+        + total_automated_runtime
+    )
+    
+    report_values = {
+        "report_timestamp": timestamp,
+        "report_timestamp_human":report_timestamp_human,
+
+        "dataset_name": dataset_name,
+        "scan_num": scan_num,
+        "scanpath": step00["scanpath"],
+        "slicepath": step00["slicepath"],
+        "layoutfile": step00["layoutfile"],
+        "layout_filename": os.path.basename(step00["layoutfile"]),
+        "output_path": output_path,
+        "metadata_path": step00["metadata_path"],
+
+        "n_slices": step00["n_slices"],
+        "first_slice": step00["first_slice"],
+        "last_slice": step00["last_slice"],
+        "first_slice_index": step00["first_slice_index"],
+        "last_slice_index": step00["last_slice_index"],
+        "slice_indices_are_consecutive": step00["slice_indices_are_consecutive"],
+        "slice_index_fraction": step00["slice_index_fraction"],
+        "voxel_size_mm": step00["voxel_size_mm"],
+        "voxel_spacing_mm": step00["voxel_spacing_mm"],
+        "is_isotropic": step00["is_isotropic"],
+        "runtime_00": step00["runtime_seconds"],
+        "runtime_00_formatted": format_runtime(step00["runtime_seconds"]),
+
+        "transpose_preview": step01["transpose_preview"],
+        "rotation_angle": step01["rotation_angle"],
+        "rowrng": step01["rowrng"],
+        "colrng": step01["colrng"],
+        "runtime_01": step01["runtime_seconds"],
+        "runtime_01_formatted": format_runtime(step01["runtime_seconds"]),
+
+        "zwindow": step02["zwindow"],
+        "remainder": step02["remainder"],
+        "npz_file": step02["subvolume_file"],
+        "reduced_volume_shape": step02["entire_subvolume_shape"],
+        "subvolume_slice_shape": step02["subvolume_slice_shape"],
+        "n_input_slices": step00["n_slices"],
+        "runtime_02": step02["runtime_seconds"],
+        "runtime_02_formatted": format_runtime(step02["runtime_seconds"]),
+
+        "n_tiers_expected": step03.get("n_tiers_expected", "not recorded"),
+        "n_active_tiers": step03.get("n_active_tiers", "not recorded"),
+        "n_specimens_expected": step03["n_expected_specimens"],
+        "n_specimens_identified": step03["n_extracted_specimens"],
+        "n_extraction_regions": step03.get(
+            "n_extraction_regions",
+            step03["n_extracted_specimens"]
+        ),
+        "reverse_detected_tier_order": tier_segmentation["reverse_detected_tier_order"],
+        "tier_detection_method": tier_segmentation["tier_detection_method"],
+        "tier_boundaries": tier_segmentation["tier_boundaries"],
+        "active_tier_ranges": tier_segmentation["active_tier_ranges"],
+        "tier_rotation_summary": tier_normalization["tier_rotations"],
+        "divider_summary": divider_review["tier_divider_definitions"],
+        "extraction_plan_csv": step03["extraction_plan_csv"],
+        "runtime_03": step03["runtime_seconds"],
+        "runtime_03_formatted": format_runtime(step03["runtime_seconds"]),
+
+        "n_specimens_extracted": step04.get("n_specimens_extracted", "not recorded"),
+        "n_meshes_generated": step04.get("n_meshes_generated", "not recorded"),
+        "n_surfacing_errors": step04["n_surfacing_errors"],
+        "extract_num_cores": surfacing_parallelization["extract_num_cores"],
+        "extract_num_cores_method": surfacing_parallelization["extract_num_cores_method"],
+        "surface_num_cores": surfacing_parallelization["surface_num_cores"],
+        "surface_num_cores_method": surfacing_parallelization["surface_num_cores_method"],
+        "iso": surfacing_parameters["iso"],
+        "iso_method": surfacing_parameters.get("iso_method", "not recorded"),
+        "padding": surfacing_parameters["padding"],
+        "mesh_folder": step04["mesh_folder"],
+        "surfacing_errors_csv": step04["surfacing_errors_csv"],
+        "extraction_runtime_seconds": step04["runtime_seconds"]["extraction"],
+        "surfacing_runtime_seconds": step04["runtime_seconds"]["surfacing"],
+        "runtime_04": step04["runtime_seconds"]["total_runtime_seconds"],
+        "runtime_04_formatted": format_runtime(
+            step04["runtime_seconds"]["total_runtime_seconds"]
+        ),
+        "interactive_setup_runtime_04": step04["runtime_seconds"]["interactive_setup"],
+        "interactive_setup_runtime_04_formatted": format_runtime(step04["runtime_seconds"]["interactive_setup"]),
+        "automated_runtime_04": step04["runtime_seconds"]["automated_runtime_seconds"],
+        "automated_runtime_04_formatted": format_runtime(step04["runtime_seconds"]["automated_runtime_seconds"]),
+        
+
+        "clean_num_cores": cleaning_parallelization["num_cores"],
+        "clean_num_cores_method": cleaning_parallelization["clean_num_cores_method"],
+        "dust_cutoff": cleaning_parameters["dust_cutoff"],
+        "hole_tolerance": cleaning_parameters["hole_tolerance"],
+        "n_input_meshes": step05["n_input_meshes"],
+        "n_meshes_cleaned": step05["n_meshes_cleaned"],
+        "n_mesh_cleaning_failures": step05["n_mesh_cleaning_failures"],
+        "mesh_cleaning_log_csv": step05["mesh_cleaning_log_csv"],
+        "mesh_cleaning_failure_summary": (
+            f"{step05['n_mesh_cleaning_failures']} mesh-cleaning failures recorded. "
+            f"See mesh-cleaning log: {step05['mesh_cleaning_log_csv']}"
+        ),
+        "clean_mesh_folder": step05["clean_mesh_folder"],
+        "interactive_setup_runtime_05": step05["runtime_seconds"]["interactive_setup"],
+        "interactive_setup_runtime_05_formatted": format_runtime(step05["runtime_seconds"]["interactive_setup"]),
+        "automated_mesh_cleaning_runtime_05": step05["runtime_seconds"]["automated_mesh_cleaning"],
+        "automated_mesh_cleaning_runtime_05_formatted": format_runtime(step05["runtime_seconds"]["automated_mesh_cleaning"]),
+        "runtime_05": step05["runtime_seconds"]["total_runtime_seconds"],
+        "runtime_05_formatted": format_runtime(
+            step05["runtime_seconds"]["total_runtime_seconds"]
+        ),
+        
+        "total_interactive_runtime": total_interactive_runtime,
+        "total_interactive_runtime_formatted": format_runtime(total_interactive_runtime),
+
+        "total_automated_runtime": total_automated_runtime,
+        "total_automated_runtime_formatted": format_runtime(total_automated_runtime),
+
+        "total_runtime": total_runtime,
+        "total_runtime_formatted": format_runtime(total_runtime),
+    }
+
+    markdown_text = render_text_template(template_path, report_values)
+
+    with open(markdown_path, "w") as f:
+        f.write(markdown_text)
+
+    pdf_created = convert_markdown_text_to_pdf(markdown_text, pdf_path)
+
+    return {
+        "report_timestamp": timestamp,
+        "report_timestamp_human": report_timestamp_human,
+        "run_report_template_md": template_path,
+        "run_report_markdown": markdown_path,
+        "run_report_pdf": pdf_path if pdf_created else None,
+        "pdf_created": pdf_created,
+    }
+
         
 def find_metadata_file_in_dataset(dataset_path):
     """
@@ -124,7 +377,7 @@ def find_metadata_file_in_dataset(dataset_path):
 
     matches.sort(key=os.path.getmtime, reverse=True)
     return matches[0]
-
+    
 # ============================================================
 # USER PROMPT HELPERS
 # Used for interactive steps throughout the workflow.
@@ -805,7 +1058,7 @@ def remove_border_dividers(dividers, max_value, border_margin_fraction=0.03):
     ]
     
 # ============================================================
-# FUNCTIONS USED BY 03_segment.py
+# FUNCTIONS USED BY 04_surface.py
 # ============================================================
     
     
@@ -867,8 +1120,13 @@ def estimate_iso_from_click_samples(image, min_clicks_per_class=3):
 
     air_mean = float(np.mean(air_values))
     specimen_mean = float(np.mean(specimen_values))
-    iso_estimate = float((air_mean + specimen_mean) / 2)
+    specimen_weight = 0.75
 
+    iso_estimate = float(
+        air_mean
+        + specimen_weight * (specimen_mean - air_mean)
+    )
+    
     print()
     print(f"Average air/background grayscale value: {air_mean:.2f}")
     print(f"Average specimen/material grayscale value: {specimen_mean:.2f}")
@@ -876,13 +1134,221 @@ def estimate_iso_from_click_samples(image, min_clicks_per_class=3):
     print()
 
     iso_metadata = {
-        "method": "click_sample_midpoint",
+        "method": "click_sample_specimen_weighted",
         "min_clicks_per_class": min_clicks_per_class,
         "air_background_samples": air_samples,
         "specimen_material_samples": specimen_samples,
         "air_background_mean": air_mean,
         "specimen_material_mean": specimen_mean,
+        "specimen_weight": specimen_weight,
         "estimated_iso": iso_estimate,
     }
 
     return iso_estimate, iso_metadata
+    
+def prepare_iso_preview_image(
+    slice_files,
+    slice_index_fraction,
+    transpose_preview,
+    rotation_angle,
+    rowrng,
+    colrng
+):
+    """
+    Prepare the representative slice used for ISO sampling.
+
+    This uses the same orientation, rotation, and crop choices
+    already stored in workflow metadata.
+    """
+
+    slice_index = int(len(slice_files) * slice_index_fraction)
+    slice_index = min(slice_index, len(slice_files) - 1)
+
+    raw_image = read_slice(slice_files[slice_index])
+
+    preview_image = apply_preview_orientation(raw_image, transpose_preview)
+    preview_image = rotate(
+        preview_image,
+        rotation_angle,
+        preserve_range=True,
+        resize=True
+    )
+
+    preview_image = preview_image[
+        rowrng[0]:rowrng[1],
+        colrng[0]:colrng[1]
+    ].copy()
+
+    return preview_image
+    
+
+def extract_specimen_subvolume_slice(
+    slice_index,
+    specimen_row,
+    tier_z_start,
+    image,
+    outpath
+):
+    """
+    Extract one specimen crop from one processed slice and append it
+    to that specimen's temporary .npy stack.
+    """
+
+    specimen_id = str(specimen_row["specimen_id"])
+
+    specimen_row_bounds = [
+        int(specimen_row["row_start_padded"]),
+        int(specimen_row["row_end_padded"])
+    ]
+
+    specimen_col_bounds = [
+        int(specimen_row["col_start_padded"]),
+        int(specimen_row["col_end_padded"])
+    ]
+
+    temp_filename = specimen_id + ".npy"
+
+    with NpyAppendArray(
+        os.path.join(outpath, temp_filename),
+        delete_if_exists=(slice_index == tier_z_start)
+    ) as npaa:
+        npaa.append(
+            image[
+                specimen_row_bounds[0]:specimen_row_bounds[1],
+                specimen_col_bounds[0]:specimen_col_bounds[1]
+            ].T[None, :, :]
+        )
+
+
+# ============================================================
+# FUNCTIONS USED BY 05_clean_meshes.py
+# ============================================================        
+
+def extract_max_subgraph(pts, tri):
+    """Keep only the largest connected component of the mesh."""
+
+    E = np.concatenate((tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]), 0)
+
+    I = E[:, 0] > E[:, 1]
+    E[I, :] = E[I, -1::-1]
+
+    E = E[E[:, 0] != E[:, 1], :]
+    E = np.unique(E, axis=0)
+    E = np.concatenate((E, E[:, -1::-1]), 0)
+
+    n_pts = pts.shape[0]
+    A = csr_matrix((np.ones(E.shape[0]), (E[:, 0], E[:, 1])), shape=(n_pts, n_pts))
+
+    nseg, labs = connected_components(csgraph=A, directed=False, return_labels=True)
+
+    counts = np.array([np.sum(labs == i) for i in range(nseg)])
+    pt_ind2keep = np.where(labs == counts.argmax())[0]
+
+    newind = np.arange(pt_ind2keep.shape[0])
+    old2new = -1 * np.ones(n_pts, dtype=int)
+    old2new[pt_ind2keep] = newind
+
+    newtri = old2new[tri]
+    newtri = newtri[np.sum(newtri < 0, 1) == 0, :]
+
+    newpts = pts[pt_ind2keep, :]
+
+    return newpts, newtri
+
+
+def clean_mesh_file(fname, input_mesh_folder, clean_mesh_folder, dust_cutoff, hole_tolerance):
+    """Clean one mesh and return a log record describing the cleaning decision."""
+
+    input_mesh_path = os.path.join(input_mesh_folder, fname)
+    output_mesh_path = os.path.join(clean_mesh_folder, fname)
+
+    record = {
+        "mesh_filename": fname,
+        "input_mesh_path": input_mesh_path,
+        "output_mesh_path": output_mesh_path,
+        "status": "failure",
+        "error_message": "",
+        "dust_cutoff": dust_cutoff,
+        "hole_tolerance": hole_tolerance,
+        "n_components_found": None,
+        "component_sizes": None,
+        "n_components_above_dust_cutoff": None,
+        "hole_detection_success": False,
+        "hole_detection_error": "",
+        "holes_by_candidate_component": None,
+        "n_components_within_hole_tolerance": None,
+        "selected_component_label": None,
+        "selected_component_size": None,
+        "selection_method": None,
+    }
+
+    try:
+        M = tm.load_ply(input_mesh_path)
+
+        try:
+            holes = M.detect_holes()
+            record["hole_detection_success"] = True
+        except Exception as e:
+            holes = None
+            record["hole_detection_error"] = str(e)
+            print(f"{fname}: detect_holes failed ({e}); falling back to largest-component cleanup only")
+
+        ncomp, labs, counts = M.con_comp(returncounts=True)
+
+        record["n_components_found"] = int(ncomp)
+        record["component_sizes"] = counts.astype(int).tolist()
+
+        print(f"{fname}: {len(counts)} components")
+
+        labels_in_consideration = np.where(counts > dust_cutoff)[0]
+        record["n_components_above_dust_cutoff"] = int(labels_in_consideration.shape[0])
+
+        if labels_in_consideration.shape[0] > 0:
+            counts_in_consideration = counts[labels_in_consideration]
+
+            if holes is None:
+                selected_label = int(labels_in_consideration[counts_in_consideration.argmax()])
+                record["selection_method"] = "largest_component_above_dust_cutoff_hole_detection_failed"
+
+            else:
+                holes_in_each = []
+
+                for i in labels_in_consideration:
+                    ex = labs == i
+                    holes_in_each.append(int(holes[ex].sum()))
+
+                holes_in_each = np.array(holes_in_each)
+                record["holes_by_candidate_component"] = holes_in_each.astype(int).tolist()
+
+                keep = holes_in_each <= hole_tolerance
+                record["n_components_within_hole_tolerance"] = int(keep.sum())
+
+                labels_holeless = labels_in_consideration[keep]
+                counts_holeless = counts_in_consideration[keep]
+
+                if len(counts_holeless) == 0:
+                    selected_label = int(counts.argmax())
+                    record["selection_method"] = "largest_component_no_candidate_met_hole_tolerance"
+                else:
+                    selected_label = int(labels_holeless[counts_holeless.argmax()])
+                    record["selection_method"] = "largest_component_within_hole_tolerance"
+
+        else:
+            print(f"{fname}: dust cutoff failed; extracting largest component")
+            selected_label = int(counts.argmax())
+            record["selection_method"] = "largest_component_no_component_above_dust_cutoff"
+
+        record["selected_component_label"] = selected_label
+        record["selected_component_size"] = int(counts[selected_label])
+
+        M = M.extract_subtri(labs == selected_label)
+        M.to_ply(output_mesh_path)
+
+        record["status"] = "success"
+
+    except Exception as e:
+        record["status"] = "failure"
+        record["error_message"] = str(e)
+        print(f"{fname}: mesh cleaning failed ({e})")
+
+    return record

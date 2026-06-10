@@ -12,11 +12,16 @@ and layout CSV, confirms that supported slice files can be found and sorted,
 creates an output folder, and writes the first metadata file for the workflow.
 """
 
+# ============================================================
+# Configuration and imports
+# ============================================================
+
 from utils import *
 
 # ============================================================
 # INTERVIEW USER ABOUT INPUT DATA
 # ============================================================
+timer_00_start = timeit.default_timer()
 
 print()
 print("Welcome to the AMAAZE mCT surfacing workflow.")
@@ -68,8 +73,26 @@ slicepath = ask_existing_path(
 
 slice_files, slice_indices = get_sorted_slice_files(slicepath)
 
+supported_extensions = list(SUPPORTED_SLICE_EXTENSIONS)
+
+n_slices = len(slice_files)
+
+first_slice = os.path.basename(slice_files[0])
+last_slice = os.path.basename(slice_files[-1])
+
+first_slice_index = int(slice_indices[0])
+last_slice_index = int(slice_indices[-1])
+
+expected_slice_indices = list(
+    range(first_slice_index, first_slice_index + n_slices)
+)
+
+slice_indices_are_consecutive = (
+    slice_indices == expected_slice_indices
+)
+
 print()
-print(f"Found {len(slice_files)} supported slice files.")
+print(f"Found {n_slices} supported slice files.")
 print("First 5 slices:", [os.path.basename(f) for f in slice_files[:5]])
 print("Last 5 slices:", [os.path.basename(f) for f in slice_files[-5:]])
 print()
@@ -121,53 +144,59 @@ else:
         cast=float
     )
 
+timer_00_stop = timeit.default_timer()
+
+# ============================================================
+# Calculate runtimes
+# ============================================================
+
+runtime_00_seconds = timer_00_stop - timer_00_start
+print("00_share_data.py runtime: ", runtime_00_seconds)
 
 # ============================================================
 # CREATE INITIAL WORKFLOW METADATA
 # ============================================================
 
 metadata_filename = build_metadata_filename(dataset_name, scan_num)
-metadata_path = os.path.join(output_path, metadata_filename)
+metadata_path = os.path.join(output_path, metadata_filename)  
 
 metadata = {
-    "dataset_name": dataset_name,
-    "scan_num": scan_num,
-
-    "paths": {
+    "00_share_data": {
+        "status": "complete",
+        
+        "dataset_name": dataset_name,
+        "scan_num": scan_num,
+        
         "scanpath": scanpath,
         "slicepath": slicepath,
         "layoutfile": layoutfile,
         "output_path": output_path,
-        "metadata_path": metadata_path
-    },
+        "metadata_path": metadata_path,
+        
+        "supported_extensions": supported_extensions,
 
-    "input_slices": {
-        "supported_extensions": list(SUPPORTED_SLICE_EXTENSIONS),
-        "n_slices": len(slice_files),
-        "first_slice": os.path.basename(slice_files[0]),
-        "last_slice": os.path.basename(slice_files[-1]),
-        "first_slice_index": int(slice_indices[0]),
-        "last_slice_index": int(slice_indices[-1]),
-        "slice_indices_are_consecutive": slice_indices == list(range(slice_indices[0], slice_indices[0] + len(slice_indices)))
-    },
-
-    "user_choices": {
+        "n_slices": n_slices,
+        "first_slice": first_slice,
+        "last_slice": last_slice,
+        "first_slice_index": first_slice_index,
+        "last_slice_index": last_slice_index,
+        "slice_indices_are_consecutive": slice_indices_are_consecutive,
+        
         "slice_index_fraction": slice_index_fraction,
+        
         "voxel_size_mm": voxel_size_mm,
         "voxel_spacing_mm": voxel_spacing_mm,
+        "is_isotropic": is_isotropic,
+        
+        "runtime_seconds": runtime_00_seconds,
     },
-
-    "workflow": {
-        "00_share_data": {
-            "status": "complete"
-        }
-    },
-
-    "outputs": {},
-    "warnings": []
 }
 
 save_metadata(metadata_path, metadata)
+
+# ============================================================
+# Confirm completion
+# ============================================================
 
 print()
 print("Setup complete.")

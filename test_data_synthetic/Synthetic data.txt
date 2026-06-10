@@ -1,0 +1,14 @@
+Synthetic data
+
+Data folder:
+/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic
+
+Slices:
+/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/CT_1_synthetic_slices
+
+CSV:
+/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/layout_CT_1_synthetic.csv
+
+Voxel: 0.079
+
+ISO: 3000

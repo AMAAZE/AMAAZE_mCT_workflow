@@ -1,4 +1,0 @@
-ang2rot: 0
-rowrng: [32, 320]
-colrng: [32, 320]
-transpose_preview: False

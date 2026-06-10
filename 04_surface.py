@@ -18,6 +18,11 @@ and meshes are generated via marching cubes and written to the Meshes folder.
 
 from utils import *
 
+# ============================================================
+# Load metadata
+# ============================================================
+timer_04_start = timeit.default_timer()
+
 print()
 dataset_path = ask_existing_path(
     "What is the name of the dataset folder you want to continue working on?\n"
@@ -25,58 +30,64 @@ dataset_path = ask_existing_path(
     is_dir=True
 )
 
-# ============================================================
-# Load metadata
-# ============================================================
-
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
-scanpath = metadata["paths"]["scanpath"]
-slicepath = metadata["paths"]["slicepath"]
-output_path = metadata["paths"]["output_path"]
+slicepath = metadata["00_share_data"]["slicepath"]
+output_path = metadata["00_share_data"]["output_path"]
 
-dataset_name = metadata["dataset_name"]
-scan_num = metadata["scan_num"]
+voxel_size_mm = metadata["00_share_data"]["voxel_size_mm"]
+voxel_spacing_mm = metadata["00_share_data"]["voxel_spacing_mm"]
 
-npz_fname = metadata["outputs"]["npz_file"]
-extraction_plan_csv = metadata["outputs"]["extraction_plan_csv"]
+rotation_angle = metadata["01_set_rotation_crop"]["rotation_angle"]
+transpose_preview = metadata["01_set_rotation_crop"]["transpose_preview"]
+rowrng = metadata["01_set_rotation_crop"]["rowrng"]
+colrng = metadata["01_set_rotation_crop"]["colrng"]
 
-rotation_angle = metadata["orientation"]["rotation_angle"]
-transpose_preview = metadata["orientation"]["transpose_preview"]
-rowrng = metadata["cropping"]["rowrng"]
-colrng = metadata["cropping"]["colrng"]
-voxel_size_mm = metadata["user_choices"]["voxel_size_mm"]
-voxel_spacing_mm = metadata["user_choices"]["voxel_spacing_mm"]
+subvolume_file = metadata["02_build_subvolume"]["subvolume_file"]
 
-# TODO(dev): Below is some legacy code. Do we need to keep any of this and if so, does it need updating to align with our current work?
+zwindow = metadata["02_build_subvolume"]["zwindow"]
 
-tier_ranges, tier_ids = np.unique(info[:, 1:3].astype(int), axis=0, return_inverse=True)
+extraction_plan_csv = metadata["03_segment"]["extraction_plan_csv"]
 
-rowrng1 = npzdata["rowrng"]
-colrng1 = npzdata["colrng"]
-ang2rot = npzdata["ang"]
-origsz = npzdata["origsz"]
-rem = npzdata["remainder"]
-transpose_preview = bool(npzdata["transpose_preview"])
 
 # ============================================================
 # Load subvolume, extraction plan, and slices
 # ============================================================
 
-npzdata = np.load(npz_fname)
-extraction_plan = pd.read_csv(extraction_plan_csv)
+try:
+    npzdata = np.load(subvolume_file)
+
+except FileNotFoundError:
+    raise RuntimeError(
+        f"Processed volume not found:\n{subvolume_file}\n\n"
+        "Run 02_build_subvolume.py to create the processed volume."
+    )
+
+try:
+    extraction_plan = pd.read_csv(extraction_plan_csv)
+
+except FileNotFoundError:
+    raise RuntimeError(
+        f"Extraction plan not found:\n{extraction_plan_csv}\n\n"
+        "Run 03_segment.py to create the extraction plan."
+    )
+
 slice_files, slice_indices = get_sorted_slice_files(slicepath)
 
-if not os.path.exists(npz_fname):
-    raise RuntimeError(f"Processed volume not found: {npz_fname}. Run 02_build_subvolume.py first.")
 
-if not os.path.exists(extraction_plan_csv):
-    raise RuntimeError(f"Extraction plan not found: {extraction_plan_csv}. Run 03_segment.py first.")
+# ============================================================
+# Prepare output folders
+# ============================================================
 
 outpath = os.path.join(output_path, "Meshes")
 os.makedirs(outpath, exist_ok=True)
 
+# ============================================================
+# Group extraction plan by tier
+# ============================================================
+
+tier_groups = extraction_plan.groupby("tier_id")
 
 # ============================================================
 # Set voxel geometry
@@ -88,20 +99,16 @@ if voxel_spacing_mm is None:
     dz = dx
 else:
     dz = voxel_spacing_mm
-    
-# TODO(dev): Below is old code, do we want to retain the print statements? Or just keep this in the background or say, we are beginning the surfacing protocol. You gave use these voxel dimensions before are they correct?
 
-if voxel_spacing_mm is None:
-    dz = dx
-    print(f"No voxel_spacing_mm provided; using isotropic spacing dz = dx = {dx} mm")
-else:
-    dz = voxel_spacing_mm
-    print(f"Using voxel_spacing_mm from user_inputs.json: dz = {dz} mm")
 
 # ============================================================
 # Set ISO value
 # ============================================================
 
+slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
+
+print()
+print("The next step is to set an ISO value.")
 print()
 print("An isovalue (ISO) is required to surface the scans.")
 print(
@@ -131,15 +138,22 @@ print()
 use_iso_helper = ask_yes_no(
     "Would you like help estimating a baseline isovalue?\n"
     "The helper will ask you to click several obvious background/air points\n"
-    "and several obvious specimen/material points, then estimate the midpoint\n"
-    "between their average grayscale values.\n"
+    "and several obvious specimen/material points, then estimate a specimen-weighted\n"
+    "isovalue from their average grayscale values.\n"
     "Choose no if you already know the isovalue you want to test.",
     default="y"
 )
 
 if use_iso_helper:
 
-    preview_image = create_iso_preview_image(...)
+    preview_image = prepare_iso_preview_image(
+        slice_files=slice_files,
+        slice_index_fraction=slice_index_fraction,
+        transpose_preview=transpose_preview,
+        rotation_angle=rotation_angle,
+        rowrng=rowrng,
+        colrng=colrng
+    )
 
     iso, iso_helper_metadata = estimate_iso_from_click_samples(
         preview_image
@@ -154,14 +168,17 @@ else:
 
     iso_helper_metadata = None
 
-
 # ============================================================
 # Set padding
 # ============================================================
 
+print()
 padding = ask(
-    "padding adds a small margin around each extracted specimen box.\n"
-    "The unit is measured in voxels.",
+    "Padding adds a small margin around each extracted specimen box.\n"
+    "This helps avoid cutting off specimen edges if the extraction boundaries are slightly tight.\n"
+    "The unit is voxels.\n"
+    "Press Enter to use the recommended default of 5 voxels.\n"
+    "Enter a larger value to include more surrounding material, or a smaller value if you want tighter specimen crops.",
     default=5,
     cast=int
 )
@@ -172,6 +189,17 @@ padding = ask(
 
 default_extract_ncores = max(1, int(multiprocessing.cpu_count() * 0.85))
 default_surface_ncores = min(20, multiprocessing.cpu_count())
+
+print()
+print("This step can use multiple CPU cores (parallelization) to speed up extraction and surfacing.")
+print(
+    f"By default, extraction uses approximately 85% of available CPU cores "
+    f"({default_extract_ncores} cores on this computer), and surfacing uses "
+    f"up to 100% of available CPU cores with a maximum of 20 "
+    f"({default_surface_ncores} cores on this computer)."
+)
+print("Advanced users may choose custom values if desired.")
+print()
 
 custom_cores = ask_yes_no(
     "Do you want to manually set CPU core counts for this step?\n"
@@ -193,105 +221,238 @@ if custom_cores:
 else:
     extract_num_cores = default_extract_ncores
     surface_num_cores = default_surface_ncores
+    
+extract_num_cores_method = "manual" if custom_cores else "default"
+surface_num_cores_method = "manual" if custom_cores else "default"
+    
+print()
+print("Setup is complete. AMAAZE will now extract specimen volumes and surface them.")
+print("This can take a while, especially for large scans or many specimens.")
+print("You do not need to answer more questions during this part.")
+print("Progress messages will appear in the terminal as files are completed.")
+print()
 
-# TODO(dev): This is old code for core use. Do we need to incorporate it or delete it?
-# If we are incorporating it does it need updating? 
-
-extract_num_cores = (
-    extract_ncores
-    if extract_ncores is not None
-    else max(1, int(multiprocessing.cpu_count() * 0.85))
-)
-
-surface_num_cores = (
-    surface_ncores
-    if surface_ncores is not None
-    else min(20, multiprocessing.cpu_count())
-)
-
-start = timeit.default_timer()
+interactive_setup_timer_stop = timeit.default_timer()
 
 # ============================================================
-# I'm not sure what this is
+# Extract specimen subvolumes from original slice stack
 # ============================================================
 
-# TODO(dev): This is code from before but perhaps is very important for the surfacing, so do we keep it and if so, I think we may need to update it. 
+extraction_timer_start = timeit.default_timer()
 
-for t in range(tier_ids.max() + 1):
-    infot = info[tier_ids == t, :].copy()
-    zrng = tier_ranges[t]
+for tier_id, tier_plan in tier_groups:
 
-    ang2rot2 = float(infot[0, 7])
+    tier_plan = tier_plan.copy()
 
-    for i in range(zrng[0], min(zrng[1], len(fnames))):
-        im = io.imread(os.path.join(slicepath, fnames[i]))
-        im = apply_preview_orientation(im, transpose_preview)
-        im = rotate(im, ang2rot, preserve_range=True)
-        im = im[rowrng1[0]:rowrng1[1], colrng1[0]:colrng1[1]].copy()
-        im = rotate(im, ang2rot2, preserve_range=True)
+    tier_z_range_reduced = [
+        int(tier_plan["z_start"].iloc[0]),
+        int(tier_plan["z_end"].iloc[0])
+    ]
 
-        if i == zrng[0]:
-            infot[:, 3] = np.maximum(infot[:, 3] - PADDING, 0)
-            infot[:, 5] = np.maximum(infot[:, 5] - PADDING, 0)
-            infot[:, 4] = np.minimum(infot[:, 4] + PADDING, im.shape[0])
-            infot[:, 6] = np.minimum(infot[:, 6] + PADDING, im.shape[1])
+    tier_z_range_original = [
+        tier_z_range_reduced[0] * zwindow,
+        min(tier_z_range_reduced[1] * zwindow, len(slice_files))
+    ]
+
+    tier_rotation_angle = float(tier_plan["tier_rotation_angle"].iloc[0])
+    
+    for slice_index in range(
+        tier_z_range_original[0],
+        tier_z_range_original[1]
+    ):
+
+        image = read_slice(slice_files[slice_index])
+        image = apply_preview_orientation(image, transpose_preview)
+        image = rotate(image, rotation_angle, preserve_range=True, resize=True)
+        image = image[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
+        image = rotate(image, tier_rotation_angle, preserve_range=True)
+        
+        row_scale = image.shape[0] / npzdata["vol"].shape[1]
+        col_scale = image.shape[1] / npzdata["vol"].shape[2]
+        
+        if slice_index == tier_z_range_original[0]:
+
+            tier_plan["row_start_scaled"] = (
+                tier_plan["row_start"].astype(float) * row_scale
+            ).round().astype(int)
+
+            tier_plan["row_end_scaled"] = (
+                tier_plan["row_end"].astype(float) * row_scale
+            ).round().astype(int)
+
+            tier_plan["col_start_scaled"] = (
+                tier_plan["col_start"].astype(float) * col_scale
+            ).round().astype(int)
+
+            tier_plan["col_end_scaled"] = (
+                tier_plan["col_end"].astype(float) * col_scale
+            ).round().astype(int)
+
+            tier_plan["row_start_padded"] = np.maximum(
+                tier_plan["row_start_scaled"] - padding,
+                0
+            )
+
+            tier_plan["row_end_padded"] = np.minimum(
+                tier_plan["row_end_scaled"] + padding,
+                image.shape[0]
+            )
+
+            tier_plan["col_start_padded"] = np.maximum(
+                tier_plan["col_start_scaled"] - padding,
+                0
+            )
+
+            tier_plan["col_end_padded"] = np.minimum(
+                tier_plan["col_end_scaled"] + padding,
+                image.shape[1]
+            )
 
         Parallel(n_jobs=extract_num_cores)(
-            delayed(extract_subvolume_slice)(i, j, infot, zrng, im, outpath) 
-            for j in range(infot.shape[0])
+            delayed(extract_specimen_subvolume_slice)(
+                slice_index=slice_index,
+                specimen_row=specimen_row,
+                tier_z_start=tier_z_range_original[0],
+                image=image,
+                outpath=outpath
+            )
+            for _, specimen_row in tier_plan.iterrows()
         )
 
 # ============================================================
-# Save overview images and compressed voxel volumes
+# Save specimen overview images and compressed subvolume files
 # ============================================================
 
-# TODO(dev): This is old code and needs to be updated
+for specimen_id in extraction_plan["specimen_id"]:
 
-for i in range(info.shape[0]):
-    fname = os.path.join(outpath, info[i, 0])
+    specimen_id = str(specimen_id)
+    fname = os.path.join(outpath, specimen_id)
+
     IMAGES = np.load(fname + ".npy", mmap_mode="r")
     overview = dicom.bone_overview(IMAGES)
     plt.imsave(fname + ".png", overview, cmap="gray")
 
     shape_out = IMAGES.shape
     np.savez_compressed(fname, I=IMAGES, dx=dx, dz=dz)
+
     del IMAGES
     os.remove(fname + ".npy")
+
     print("finished ", fname, " size: ", shape_out)
 
-stop = timeit.default_timer()
-print("subvol extraction runtime: ", stop - start)
-
-print(transpose_preview)
+extraction_timer_stop = timeit.default_timer()
 
 # ============================================================
-# Surfacing
+# Surface specimen volumes
 # ============================================================
 
-#TODO(dev): I think we need to keep this but I think it needs to be updated. 
+surfacing_timer_start = timeit.default_timer()
 
-print("starting DICOM surfacing")
+print()
+print("Starting specimen surfacing.")
+print("This step creates mesh files from the extracted specimen volumes.")
+print()
+
+surfacing_errors_csv = os.path.join(output_path, "surfacing_errors.csv")
+
 dicom.surface_bones_parallel(
-    outpath,
-    iso=ISOLEVEL,
-    write_gif=False,
-    mirror=transpose_preview,
+    directory=outpath,
+    iso=iso,
+    error_fname=surfacing_errors_csv,
     ncores=surface_num_cores
 )
 
+n_surfacing_errors = count_csv_rows(surfacing_errors_csv)
+
+n_specimens_extracted = len(extraction_plan["specimen_id"].unique())
+
+n_meshes_generated = len([
+    f for f in os.listdir(outpath)
+    if f.lower().endswith(".ply")
+])
+
+iso_method = "iso_helper" if use_iso_helper else "manual_entry"
+
+surfacing_timer_stop = timeit.default_timer()
+timer_04_stop = timeit.default_timer()
+
 # ============================================================
-# Save metadata
+# Calculate runtimes
 # ============================================================
 
+interactive_setup_runtime_seconds = (
+    interactive_setup_timer_stop - timer_04_start
+)
 
+extraction_runtime_seconds = (
+    extraction_timer_stop - extraction_timer_start
+)
 
-"iso": iso,
-"iso_helper": iso_helper_metadata,
+surfacing_runtime_seconds = (
+    surfacing_timer_stop - surfacing_timer_start
+)
 
+total_runtime_04_seconds = (
+    timer_04_stop - timer_04_start
+)
+
+automated_runtime_04_seconds = (
+    extraction_runtime_seconds
+    + surfacing_runtime_seconds
+)
 
 # ============================================================
-# Confirmation and end --- next script stuff
+# Update metadata
 # ============================================================
 
+metadata["04_surface"] = {
+    "status": "complete",
+
+    "mesh_folder": outpath,
+    "surfacing_errors_csv": surfacing_errors_csv,
+
+    "n_specimens_extracted": n_specimens_extracted,
+    "n_meshes_generated": n_meshes_generated,
+    "n_surfacing_errors": n_surfacing_errors,
+
+    "surfacing_parameters": {
+        "iso": iso,
+        "iso_method": iso_method,
+        "iso_helper": iso_helper_metadata,
+        "padding": padding,
+    },
+
+    "parallelization": {
+        "extract_num_cores": extract_num_cores,
+        "extract_num_cores_method": extract_num_cores_method,
+        "surface_num_cores": surface_num_cores,
+        "surface_num_cores_method": surface_num_cores_method,
+    },
+
+    "runtime_seconds": {
+        "interactive_setup": interactive_setup_runtime_seconds,
+        "extraction": extraction_runtime_seconds,
+        "surfacing": surfacing_runtime_seconds,
+        "total_runtime_seconds": total_runtime_04_seconds,
+        "automated_runtime_seconds": automated_runtime_04_seconds,
+    },
+}
+
+save_metadata(metadata_path, metadata)
+
+# ============================================================
+# Confirm completion
+# ============================================================
+
+print()
+print("Surfacing complete.")
+print(f"Surface meshes were saved to:\n{outpath}")
+print()
+print("Before continuing, open and inspect a few meshes.")
+print("Verify that specimens are complete, properly scaled, and free of obvious extraction or surfacing problems.")
+print()
+print("If the meshes look reasonable, continue to:")
+print("python 05_clean_meshes.py")
+print()
 
 

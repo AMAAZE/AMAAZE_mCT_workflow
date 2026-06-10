@@ -26,6 +26,8 @@ from utils import *
 # Load metadata
 # ============================================================
 
+timer_02_start = timeit.default_timer()
+
 print()
 dataset_path = ask_existing_path(
     "What is the name of the dataset folder you want to continue working on?\n"
@@ -36,19 +38,19 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
-scanpath = metadata["paths"]["scanpath"]
-slicepath = metadata["paths"]["slicepath"]
-output_path = metadata["paths"]["output_path"]
-slice_index_fraction = metadata["user_choices"]["slice_index_fraction"]
+scanpath = metadata["00_share_data"]["scanpath"]
+slicepath = metadata["00_share_data"]["slicepath"]
+output_path = metadata["00_share_data"]["output_path"]
+slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
 
-dataset_name = metadata["dataset_name"]
-scan_num = metadata["scan_num"]
+dataset_name = metadata["00_share_data"]["dataset_name"]
+scan_num = metadata["00_share_data"]["scan_num"]
 
-transpose_preview = metadata["orientation"]["transpose_preview"]
-rotation_angle = metadata["orientation"]["rotation_angle"]
+transpose_preview = metadata["01_set_rotation_crop"]["transpose_preview"]
+rotation_angle = metadata["01_set_rotation_crop"]["rotation_angle"]
 
-rowrng = metadata["cropping"]["rowrng"]
-colrng = metadata["cropping"]["colrng"]
+rowrng = metadata["01_set_rotation_crop"]["rowrng"]
+colrng = metadata["01_set_rotation_crop"]["colrng"]
 
 # ============================================================
 # Load slices
@@ -112,7 +114,7 @@ if i%zwindow!=(zwindow-1): #fix the end if 'last' cond didn't happen
     subsampled.append(imstack)
     rem = (i%zwindow) +1
 
-outfile = os.path.join(
+subvolume_file = os.path.join(
     output_path,
     f"{dataset_name}_scan{scan_num}_subvolume.npz"
 )
@@ -123,43 +125,46 @@ outfile = os.path.join(
 # downstream geometric and segmentation behavior on rectangular datasets.
     
 np.savez(
-    outfile, 
+    subvolume_file, 
     vol=subsampled, 
     rowrng=rowrng, 
     colrng=colrng, 
     ang=rotation_angle, 
     origsz=im.shape, 
     remainder=rem,
-    reduced_shape=np.array(subsampled[0].shape),
+    entire_subvolume_shape=np.array(subsampled).shape,
+    subvolume_slice_shape=np.array(subsampled[0].shape),
     transpose_preview=transpose_preview
 )
+
+entire_subvolume_shape = list(np.array(subsampled).shape)
+subvolume_slice_shape = list(np.array(subsampled[0]).shape)
+
+timer_02_stop = timeit.default_timer()
+
+# ============================================================
+# Calculate runtimes
+# ============================================================
+
+runtime_02_seconds = timer_02_stop - timer_02_start
+print("02_build_subvolume.py runtime: ", runtime_02_seconds)
 
 # ============================================================
 # Update metadata
 # ============================================================
 
-metadata["workflow"]["02_build_volume"] = {
+metadata["02_build_subvolume"] = {
     "status": "complete",
-    "input_slices": {
-        "n_slices": n_slices,
-        "first_slice": os.path.basename(slice_files[0]),
-        "last_slice": os.path.basename(slice_files[-1]),
-    },
-    "processing": {
-        "zwindow": zwindow,
-        "remainder": rem,
-        "rotation_angle": rotation_angle,
-        "rowrng": rowrng,
-        "colrng": colrng,
-        "transpose_preview": transpose_preview,
-    },
-    "outputs": {
-        "npz_file": outfile,
-        "reduced_shape": list(np.array(subsampled).shape),
-    },
+    
+    "zwindow": zwindow,
+    "remainder": rem,
+    
+    "subvolume_file": subvolume_file,
+    "entire_subvolume_shape": entire_subvolume_shape,
+    "subvolume_slice_shape": subvolume_slice_shape,
+    
+    "runtime_seconds": runtime_02_seconds,
 }
-
-metadata["outputs"]["npz_file"] = outfile
 
 save_metadata(metadata_path, metadata)
 

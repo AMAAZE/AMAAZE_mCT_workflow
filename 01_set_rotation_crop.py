@@ -20,6 +20,7 @@ from utils import *
 # ============================================================
 # Load metadata
 # ============================================================
+timer_01_start = timeit.default_timer()
 
 print()
 dataset_path = ask_existing_path(
@@ -31,10 +32,10 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
-scanpath = metadata["paths"]["scanpath"]
-slicepath = metadata["paths"]["slicepath"]
-output_path = metadata["paths"]["output_path"]
-slice_index_fraction = metadata["user_choices"]["slice_index_fraction"]
+scanpath = metadata["00_share_data"]["scanpath"]
+slicepath = metadata["00_share_data"]["slicepath"]
+output_path = metadata["00_share_data"]["output_path"]
+slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
 
 # ============================================================
 # Load slices and identify representative slice
@@ -163,22 +164,28 @@ while True:
         print()
         print("Let's try the crop again.")
 
+timer_01_stop = timeit.default_timer()
+
+# ============================================================
+# Calculate runtimes
+# ============================================================
+
+runtime_01_seconds = timer_01_stop - timer_01_start
+print("01_set_crop_rotation.py runtime: ", runtime_01_seconds)
+
 # ============================================================
 # Update metadata
 # ============================================================
 
-metadata["orientation"] = {
-    "transpose_preview": transpose_preview,
-    "rotation_angle": rotation_angle
-}
-
-metadata["cropping"] = {
-    "rowrng": rowrng,
-    "colrng": colrng
-}
-
-metadata["workflow"]["01_set_rotation_crop"] = {
-    "status": "complete"
+metadata["01_set_rotation_crop"] = {
+        "status": "complete",
+    
+        "transpose_preview": transpose_preview,
+        "rotation_angle": rotation_angle, 
+        "rowrng": rowrng,
+        "colrng": colrng, 
+    
+        "runtime_seconds": runtime_01_seconds,
 }
 
 save_metadata(metadata_path, metadata)

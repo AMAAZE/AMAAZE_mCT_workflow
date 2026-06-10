@@ -28,6 +28,8 @@ from utils import *
 # Load metadata
 # ============================================================
 
+timer_03_start = timeit.default_timer()
+
 print()
 dataset_path = ask_existing_path(
     "What is the name of the dataset folder you want to continue working on?\n"
@@ -39,31 +41,25 @@ metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
 # Extract data from metadata file needed for this workflow
-scanpath = metadata["paths"]["scanpath"]
-output_path = metadata["paths"]["output_path"]
-layoutfile = metadata["paths"]["layoutfile"]
+output_path = metadata["00_share_data"]["output_path"]
+layoutfile = metadata["00_share_data"]["layoutfile"]
 
-dataset_name = metadata["dataset_name"]
-scan_num = metadata["scan_num"]
-
-rotation_angle = metadata["orientation"]["rotation_angle"]
-transpose_preview = metadata["orientation"]["transpose_preview"]
-rowrng = metadata["cropping"]["rowrng"]
-colrng = metadata["cropping"]["colrng"]
+dataset_name = metadata["00_share_data"]["dataset_name"]
+scan_num = metadata["00_share_data"]["scan_num"]
 
 # ============================================================
 # Load subvolume (npz) from 02
 # ============================================================
 
-npz_fname = metadata["outputs"]["npz_file"]
+subvolume_file = metadata["02_build_subvolume"]["subvolume_file"]
 
-if not os.path.exists(npz_fname):
+if not os.path.exists(subvolume_file):
     raise RuntimeError(
-        f"Processed volume not found: {npz_fname}. "
-        "Run 02_build_volume.py first."
+        f"Processed volume not found: {subvolume_file}. "
+        "Run 02_build_subvolume.py first."
     )
 
-npzdata = np.load(npz_fname)
+npzdata = np.load(subvolume_file)
 
 # Extract data for this workflow from npz
 vol = npzdata["vol"]
@@ -206,7 +202,7 @@ else:
     tier_detection_method = "automatic_peaks"
     print("using ", ex)
 
-tier_metadata = {}
+tier_segmentation = {}
 
 # Convert the selected tier boundary positions into start/end ranges.
 # Each range is one tier in the reduced .npz volume.
@@ -257,10 +253,10 @@ reverse_detected_tier_order = ask_yes_no(
     default="n"
 )
 
-tier_metadata["tier_boundaries"] = [int(v) for v in ex]
-tier_metadata["n_detected_tiers"] = len(ex) - 1
-tier_metadata["tier_detection_method"] = tier_detection_method
-tier_metadata["reverse_detected_tier_order"] = reverse_detected_tier_order
+tier_segmentation["tier_boundaries"] = [int(v) for v in ex]
+tier_segmentation["n_detected_tiers"] = len(ex) - 1
+tier_segmentation["tier_detection_method"] = tier_detection_method
+tier_segmentation["reverse_detected_tier_order"] = reverse_detected_tier_order
 
 if reverse_detected_tier_order:
     ranges = ranges[::-1]
@@ -273,8 +269,8 @@ ranges = [ranges[i] for i in active_tiers]
 
 active_tier_ids = tier_ids[active_tiers]
 
-tier_metadata["active_tier_indices"] = [int(v) for v in active_tiers]
-tier_metadata["active_tier_ranges"] = [
+tier_segmentation["active_tier_indices"] = [int(v) for v in active_tiers]
+tier_segmentation["active_tier_ranges"] = [
     [int(start), int(end)] for start, end in ranges
 ]
 
@@ -301,7 +297,7 @@ I = [x.mean(0) for x in SLICES]
 # run metadata for replication.
 
 normalized_tier_images = []
-rotation_metadata = []
+tier_rotations = []
 
 for i in range(len(I)):
     tier_image = I[i]
@@ -323,8 +319,8 @@ for i in range(len(I)):
     
     normalized_tier_images.append(normalized_image)
 
-    rotation_metadata.append({
-        "tier_index": int(i),
+    tier_rotations.append({
+        "tier_id": int(active_tier_ids[i]),
         "rotation_angle": best_angle,
         "angle_min": -5,
         "angle_max": 5,
@@ -500,8 +496,18 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
     fig.suptitle(f"Tier {i+1}: automated divider proposal", fontsize=14)
     plt.tight_layout()
-    plt.show()
-       
+    plt.show(block=False)
+
+    print()
+    print("An automated divider proposal window is open.")
+    print("Review the proposed divider locations.")
+    print("Close the divider proposal window when you are done reviewing it.")
+    print()
+
+    input("Press Enter after closing the automated divider proposal window...")
+
+    plt.close(fig)
+
     review_choice = input(
         "\nPress ENTER to accept automated dividers "
         "or type 'm' for manual override: "
@@ -520,7 +526,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
 # manual-only mode: proposals are empty
 # assisted mode: proposals come from automation
 
-final_divider_metadata = []
+tier_divider_definitions = []
 
 for i, normalized_image in enumerate(normalized_tier_images):
 
@@ -566,7 +572,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
             title=f"Tier {tier_id}: divider review"
         )
                 
-    final_divider_metadata.append({
+    tier_divider_definitions.append({
         "tier_id": tier_id,
         "proposed_row_dividers": proposed_rows.tolist(),
         "proposed_col_dividers": proposed_cols.tolist(),
@@ -592,7 +598,7 @@ extraction_plan_csv = os.path.join(
 
 extraction_rows = []
 
-for i, divider_info in enumerate(final_divider_metadata):
+for i, divider_info in enumerate(tier_divider_definitions):
 
     tier_id = divider_info["tier_id"]
     z_start, z_end = ranges[i]
@@ -608,7 +614,7 @@ for i, divider_info in enumerate(final_divider_metadata):
     row_edges = np.concatenate(([0], row_dividers, [I[i].shape[0]]))
     col_edges = np.concatenate(([0], col_dividers, [I[i].shape[1]]))
     
-    tier_rotation_angle = rotation_metadata[i]["rotation_angle"]
+    tier_rotation_angle = tier_rotations[i]["rotation_angle"]
 
     for row_idx in range(tier_layout.shape[0]):
         for col_idx in range(tier_layout.shape[1]):
@@ -635,30 +641,63 @@ for i, divider_info in enumerate(final_divider_metadata):
 extraction_plan = pd.DataFrame(extraction_rows)
 extraction_plan.to_csv(extraction_plan_csv, index=False)
 
+n_tiers_expected = n_tiers
+n_active_tiers = len(active_tier_ids)
+
+n_expected_specimens = int(np.sum([np.sum(layout_by_tier[t]["mask"]) for t in layout_by_tier]))
+n_extracted_specimens = len(extraction_rows)
+n_extraction_regions = len(extraction_rows)
+
+timer_03_stop = timeit.default_timer()
+
+# ============================================================
+# Calculate runtimes
+# ============================================================
+
+runtime_03_seconds = timer_03_stop - timer_03_start
+
+print("03_segment.py runtime: ", runtime_03_seconds)
+
 # ============================================================
 # Update metadata
 # ============================================================
 
-metadata["workflow"]["03_segment"] = {
+metadata["03_segment"] = {
     "status": "complete",
-    "inputs": {
-        "npz_file": npz_fname,
-        "volume_shape": list(vol.shape),
-        "rowrng": rowrng.tolist(),
-        "colrng": colrng.tolist(),
-        "rotation_angle": float(rotation_angle),
-        "transpose_preview": transpose_preview,
+
+    "extraction_plan_csv": extraction_plan_csv,
+
+    "n_tiers_expected": n_tiers_expected,
+    "n_active_tiers": n_active_tiers,
+
+    "n_expected_specimens": n_expected_specimens,
+    "n_extracted_specimens": n_extracted_specimens,
+    "n_extraction_regions": n_extraction_regions,
+
+    "tier_segmentation": {
+        "tier_boundaries": tier_segmentation["tier_boundaries"],
+        "n_detected_tiers": tier_segmentation["n_detected_tiers"],
+        "tier_detection_method": tier_segmentation["tier_detection_method"],
+        "reverse_detected_tier_order": tier_segmentation["reverse_detected_tier_order"],
+        "active_tier_indices": tier_segmentation["active_tier_indices"],
+        "active_tier_ranges": tier_segmentation["active_tier_ranges"],
     },
-    "outputs": {
-        "extraction_plan_csv": extraction_plan_csv,
+
+    "tier_normalization": {
+        "rotation_method": "estimate_grid_rotation_by_coherence",
+        "angle_min": -5,
+        "angle_max": 5,
+        "angle_step": 0.25,
+        "tier_rotations": tier_rotations,
     },
-    "tiers": tier_metadata,
-    "tier_rotations": rotation_metadata,
-    "final_dividers": final_divider_metadata,
+
+    "divider_review": {
+        "review_method": "automated_proposal_with_manual_override",
+        "tier_divider_definitions": tier_divider_definitions,
+    },
+
+    "runtime_seconds": runtime_03_seconds,
 }
-
-metadata["outputs"]["extraction_plan_csv"] = extraction_plan_csv
-
 save_metadata(metadata_path, metadata)
 
 # ============================================================
