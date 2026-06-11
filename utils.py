@@ -123,11 +123,21 @@ def convert_markdown_text_to_pdf(markdown_text, pdf_path):
 
     try:
         subprocess.run(
-            ["pandoc", "-", "-o", pdf_path],
+            [
+                "pandoc",
+                "-V", "geometry:margin=1in",
+                "-V", "fontsize=10pt",
+                "-V", "linestretch=1.05",
+                "--wrap=preserve",
+                "-",
+                "-o",
+                pdf_path,
+            ],
             input=markdown_text,
             text=True,
-            check=True
+            check=True,
         )
+
         return True
     except subprocess.CalledProcessError:
         return False
@@ -165,12 +175,11 @@ def write_final_run_report(metadata):
 
     output_path = step00["output_path"]
     dataset_folder_name = step00["dataset_folder_name"]
-    scan_num = step00["scan_num"]
 
     timestamp = current_timestamp_for_filename()
     
     report_timestamp_human = datetime.datetime.now().strftime(
-    "%B %d, %Y at %I:%M %p"
+        "%B %d, %Y at %I:%M %p"
     )
 
     template_path = os.path.join(
@@ -178,7 +187,7 @@ def write_final_run_report(metadata):
         "final_run_report_template.md"
     )
 
-    report_base = f"final_run_report_{dataset_folder_name}_scan{scan_num}_{timestamp}"
+    report_base = f"final_run_report_{dataset_folder_name}_{timestamp}"
     markdown_path = os.path.join(output_path, report_base + ".md")
     pdf_path = os.path.join(output_path, report_base + ".pdf")
 
@@ -211,10 +220,9 @@ def write_final_run_report(metadata):
     
     report_values = {
         "report_timestamp": timestamp,
-        "report_timestamp_human":report_timestamp_human,
+        "report_timestamp_human": report_timestamp_human,
 
         "dataset_folder_name": dataset_folder_name,
-        "scan_num": scan_num,
         "scanpath": step00["scanpath"],
         "slicepath": step00["slicepath"],
         "layoutfile": step00["layoutfile"],
@@ -229,6 +237,8 @@ def write_final_run_report(metadata):
         "last_slice_index": step00["last_slice_index"],
         "slice_indices_are_consecutive": step00["slice_indices_are_consecutive"],
         "slice_index_fraction": step00["slice_index_fraction"],
+        "total_slice_bytes": step00["total_slice_bytes"],
+        "total_slice_gb": step00["total_slice_gb"],
         "voxel_size_mm": step00["voxel_size_mm"],
         "voxel_spacing_mm": step00["voxel_spacing_mm"],
         "is_isotropic": step00["is_isotropic"],
@@ -344,39 +354,110 @@ def write_final_run_report(metadata):
         
 def find_metadata_file_in_dataset(dataset_path):
     """
-    Find the current workflow metadata file inside a dataset folder.
+    Find the workflow metadata file inside the standardized
+    output folder for a dataset.
     """
 
-    dataset_path = normalize_path(dataset_path)
+    while True:
 
-    matches = []
+        dataset_path = normalize_path(dataset_path)
 
-    for root, dirs, files in os.walk(dataset_path):
-        for fname in files:
-            if fname.endswith("_metadata.json"):
-                matches.append(os.path.join(root, fname))
+        output_folders = []
 
-    if len(matches) == 0:
-        raise RuntimeError(
-            "No metadata file was found inside that dataset folder. "
-            "Please run 00_share_data.py for this dataset before continuing."
-        )
+        for fname in os.listdir(dataset_path):
+            candidate = os.path.join(dataset_path, fname)
 
-    amaaze_matches = [
-        path for path in matches
-        if "_AMAAZE_outputs" in os.path.basename(os.path.dirname(path))
-    ]
+            if (
+                os.path.isdir(candidate)
+                and fname.endswith("_outputs")
+            ):
+                output_folders.append(candidate)
 
-    if len(amaaze_matches) == 1:
-        return amaaze_matches[0]
+        output_folders.sort()
 
-    if len(amaaze_matches) > 1:
-        amaaze_matches.sort(key=os.path.getmtime, reverse=True)
-        return amaaze_matches[0]
+        if len(output_folders) == 0:
+            print()
+            print("No output folder was found in that dataset folder.")
+            print("Please run 00_share_data.py first, or check that you selected the correct dataset folder.")
+            print()
 
-    matches.sort(key=os.path.getmtime, reverse=True)
-    return matches[0]
-    
+            dataset_path = ask_existing_path(
+                "What is the full path to the dataset folder you want to continue working on?",
+                is_dir=True
+            )
+            continue
+
+        if len(output_folders) > 1:
+            print()
+            print("More than one output folder was found in that dataset folder.")
+            print("Please choose the output folder for the run you want to continue.")
+            print()
+
+            for i, folder in enumerate(output_folders, start=1):
+                print(f"{i}. {folder}")
+
+            choice = ask(
+                "Enter the number of the output folder to use.",
+                cast=int
+            )
+
+            if choice < 1 or choice > len(output_folders):
+                print()
+                print("That number is not in the list. Please try again.")
+                print()
+                continue
+
+            output_folder = output_folders[choice - 1]
+
+        else:
+            output_folder = output_folders[0]
+
+        metadata_files = [
+            os.path.join(output_folder, fname)
+            for fname in os.listdir(output_folder)
+            if fname.endswith("_metadata.json")
+        ]
+
+        metadata_files.sort()
+
+        if len(metadata_files) == 0:
+            print()
+            print("No workflow metadata file was found in this output folder.")
+            print("Please run 00_share_data.py first, or check that the output folder has not been moved or renamed.")
+            print()
+            print(output_folder)
+            print()
+
+            dataset_path = ask_existing_path(
+                "What is the full path to the dataset folder you want to continue working on?",
+                is_dir=True
+            )
+            continue
+
+        if len(metadata_files) > 1:
+            print()
+            print("More than one metadata file was found in this output folder.")
+            print("There should usually be only one standardized metadata file per output folder.")
+            print("Please choose the metadata file for the run you want to continue.")
+            print()
+
+            for i, metadata_file in enumerate(metadata_files, start=1):
+                print(f"{i}. {metadata_file}")
+
+            choice = ask(
+                "Enter the number of the metadata file to use.",
+                cast=int
+            )
+
+            if choice < 1 or choice > len(metadata_files):
+                print()
+                print("That number is not in the list. Please try again.")
+                print()
+                continue
+
+            return metadata_files[choice - 1]
+
+        return metadata_files[0]    
 # ============================================================
 # USER PROMPT HELPERS
 # Used for interactive steps throughout the workflow.
@@ -498,28 +579,19 @@ def ask_float_in_range(prompt, minimum, maximum, default=None):
 # Metadata creation and initialization.
 # ============================================================
 
-def build_metadata_filename(dataset_folder_name, scan_num):
+def build_metadata_filename(dataset_folder_name):
     """
     Create a standardized metadata filename for a dataset and scan.
     """
-    
-    if scan_num is None:
-        return f"{dataset_folder_name}_metadata.json"
-        
-    return f"{dataset_folder_name}_scan{scan_num}_metadata.json"
+            
+    return f"{dataset_folder_name}_metadata.json"
 
-def create_output_folder(scanpath, dataset_folder_name, scan_num):
-    """
-    Create and return the standardized AMAAZE output folder for this scan.
-    """
 
-    if scan_num is None:
-        output_folder_name = f"{dataset_folder_name}_AMAAZE_outputs"
-    else:
-        output_folder_name = (
-            f"{dataset_folder_name}_scan{scan_num}_AMAAZE_outputs"
-        )
-        
+def create_output_folder(scanpath, dataset_folder_name):
+    """
+    Create and return the standardized output folder for this scan.
+    """
+    output_folder_name = f"{dataset_folder_name}_outputs"
     output_path = os.path.join(scanpath, output_folder_name)
 
     os.makedirs(output_path, exist_ok=True)
@@ -747,14 +819,15 @@ def resize_preserve_aspect(im, max_edge=225):
 # FUNCTIONS USED BY 03_segment.py
 # ============================================================
 
-def select_tier_boundaries_by_prominence(q, peaks, peak_props, n_tiers):
+def select_tier_boundaries_by_prominence(q, peaks, peak_props, n_tiers): 
     """
     Select tier boundaries using peak prominence.
 
     Assumes:
-    - the first detected peak represents the left/top box boundary,
-    - len(q) represents the right/bottom scan boundary,
+    - the first detected peak represents the top box boundary, i.e. tier 1, left part of the curve,
+    - len(q) represents the right/bottom scan boundary, q is stupid we will assign a new name mean intensity something z or somethng. 
     - internal tier boundaries are selected from the most prominent internal peaks.
+    - the bottom of the box is the rightmost peak on the curve and one of the boundaries of the bottom tier. 
     """
 
     peaks = np.array(peaks).astype(int)

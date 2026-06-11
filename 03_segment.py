@@ -32,8 +32,11 @@ timer_03_start = timeit.default_timer()
 
 print()
 dataset_path = ask_existing_path(
-    "What is the name of the dataset folder you want to continue working on?\n"
-    "This should be the same dataset folder you gave to 00_share_data.py.",
+    "What is the full path to the dataset folder you want to continue working on?\n"
+    "Please include the dataset folder itself in the path.\n"
+    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
+    "Example:\n"
+    "C:/MyProject/CT_scan_01",
     is_dir=True
 )
 
@@ -44,8 +47,7 @@ metadata = load_metadata_if_available(metadata_path)
 output_path = metadata["00_share_data"]["output_path"]
 layoutfile = metadata["00_share_data"]["layoutfile"]
 
-dataset_name = metadata["00_share_data"]["dataset_name"]
-scan_num = metadata["00_share_data"]["scan_num"]
+dataset_folder_name = metadata["00_share_data"]["dataset_folder_name"]
 
 # ============================================================
 # Load subvolume (npz) from 02
@@ -75,18 +77,17 @@ vol = npzdata["vol"]
 # - how many rows/columns are expected
 # - what each extracted cell should be named
 
-# Empty cells are converted to 0 by fillna(0), and later ignored.
+# Empty cells are converted to 0 by fillna(0) and are treated as
+# intentionally empty positions within the specimen layout.
 x = pd.read_csv(layoutfile).fillna(0)
 x = x.to_numpy()
 
-# Keep only the rows for the scan currently being processed.
-# Column 0 is scan number, so after filtering we remove it with [:, 1:].
-x = x[x[:,0]==scan_num,1:].copy()
-    
+# The layout CSV describes only the current dataset.
+# Column 0 is the tier number.
 if len(x) == 0:
     raise ValueError(
-        f'Scan {scan_num} not found in layout file. '
-        'Check that the CSV includes this scan and follows the required format.'
+        "The layout CSV appears to be empty."
+        "Check that the CSV describes the current dataset and follows the required format."
     )
 
 # Number of tiers listed in the layout file.
@@ -593,7 +594,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
 extraction_plan_csv = os.path.join(
     output_path,
-    f"{dataset_name}_scan{scan_num}_extraction_plan.csv"
+    f"{dataset_folder_name}_extraction_plan.csv"
 )
 
 extraction_rows = []

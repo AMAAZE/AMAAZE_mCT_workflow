@@ -1,25 +1,55 @@
 The running AMAAZE mCT Workflow "To Do" List
 
-- In 00, multiple_scans is used but never assigned
-- In 00, the first scan question is currently scan_num = ask(...), but it should be multiple_scans = ask_yes_no(...)
-- in 02/03, the old dataset_name key is still being read from metadata, but 00 now writes dataset_folder_name, so those will break until updated.
-- We need to move the “Mesh cleaning complete” print statement to the top of the closing messages.
-- We need to ensure that only one output folder is created for each run.
-- We need to figure out the z-window value issue. The data shapes are consistent and even a bit smoother at higher averaging but our selection of condidate peaks is brittle. Look at the testing Google Slide in the shared Sam/Jeff/Kat folder and also the conv entitled,"Voxel spacing adjustment" then scroll up until you find a wall of text that begins with, "I think you're zeroing in on the right problem."
-- We need to diagnose the extraction time which seems to be taking forever! This is the thing that concerns me most.
+---------------------------------------------------------------------------------------------------------------------
+High priority fixes to the flow (flow won't work) 
+---------------------------------------------------------------------------------------------------------------------
+
+- We need to figure out the z-window value issue. The data shapes are consistent and even a bit smoother at higher averaging but our selection of condidate peaks is brittle. Look at the testing Google Slide in the shared Sam/Jeff/Kat folder and also the conv entitled,"Voxel spacing adjustment" then scroll up until you find a wall of text that begins with, "I think you're zeroing in on the right problem." I think this is playing into the run time issues while writing the npy files during the extraction phase. 
+
+- Test the ISO interface
+
+---------------------------------------------------------------------------------------------------------------------
+Usability concerns (flow will work but could be better)
+---------------------------------------------------------------------------------------------------------------------
+
 - 04 should print progress after each specimen, something like “writing volume 3/8…” and “surfacing mesh 3/8…”, because file-size watching should not be the only proof that the script is alive.
+
 - Update the md template to separate extraction and surfacing times in the summary and maybe in the descriptive part separate further: extraction, write npy, etc. because we were getting stalledin the npy writing, although this seems to be a product of the z-averaging. 
-- Change the metadata/data file seeking before to ask for ask for the full dataset folder path in 01–05. Retain the foldername request as an identifier. It's human-friendly, gets embedded in output names, report names, metadata names, etc. That's why it should be short and descriptive.
-- Add documentation in setup instructions telling users to install Pandoc separately in order for report generation to work succesfully. 
-- Make sure that wherever this is (or should be) a runtime error that this is changed to an interactive moment with the user so they don't necessarily have to run the entire script. 
-- Review and update all documentation and api across the board as this is all going to have to change. 
+
+- Make sure that wherever this is (or should be) a runtime error that this is changed to an interactive moment with the user so they don't necessarily have to run the entire script.
+
+- Go through all scripts and replace all obscure labels with more descriptive labels. 
+
+---------------------------------------------------------------------------------------------------------------------
+Update / create accessory scripts (not necessary for workflow but easier to adjust prior to updating documentation)
+---------------------------------------------------------------------------------------------------------------------
+
 - update the photo creation script to align with workflow scripts
+
 - update the contact sheet script to align with worfklow scripts
     - Is it possible to automate the running of the image script when this script is invoked since that one is required for this one? Otherwise, interactive print message works. 
+
 - create a .gif creating script
+
 - create a reproduce_workflow script so the run_metadata.json has purpose. 
     - Add an immediate, before continuing with this script make sure you rename the output folders from previous runs so you don't overwrite anything print statement. 
-- create a .py that outputs jpg of dcm slices so they can easily be seen without having to import them one-by-one into photoshop. 
+
+- clean up the .py that outputs jpg of dcm slices so they can easily be seen without having to import them one-by-one into photoshop. 
+
+---------------------------------------------------------------------------------------------------------------------
+Documentation (Address at the end once everything works and is usable)
+---------------------------------------------------------------------------------------------------------------------
+
 - Update script header descriptions
+
+- Make sure to update documentation and paper to reflect that there should be no scan number column in the CSV and that there should be one CSV per scan package. 
+
+- Add documentation in setup instructions telling users to install Pandoc separately in order for report generation to work succesfully. 
+
+- Review and update all documentation and api across the board as this is all going to have to change. 
+
+
+
+
 
 

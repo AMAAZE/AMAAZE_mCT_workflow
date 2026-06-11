@@ -32,13 +32,10 @@ print()
 
 print()
 dataset_folder_name = ask_dataset_folder_name(
-    "What is the name of the dataset folder where we can find the scan\n"
-    "data we will be processing today?\n\n"
+    "What is the name of the dataset folder where we can find the scan data we will be processing today?\n"
     "Example:\n"
-    "CT_scan_01\n\n"
-    "You will be asked for this folder name again in subsequent\n"
-    "workflow steps, so keep it handy.\n\n"
-    "This folder name is also used to name workflow outputs. \n"
+    "CT_scan_01\n"
+    "This folder name is used to name workflow outputs. \n"
     "If it is very long, your workflow output names will also be very long."    
 )
 
@@ -47,34 +44,10 @@ scanpath = ask_existing_path(
     "What is the entire path to the folder for this scan dataset?\n"
     "Please include the dataset folder itself in the path.\n"
     "Example:\n"
-    "C:/MyProject/CT_scan_01",
+    "C:/MyProject/CT_scan_01 \n"
+    "You will be asked for this filepath again in subsequent workflow steps, so keep it handy. \n",
     is_dir=True
 )
-
-print()
-scan_num = ask(
-    "Sometimes people have multiple datasets and differentiate \n"
-    "their scans by number. \n"
-    "Example: \n"
-    "CT_scan_01, CT_scan_02, CT_scan_03, etc. \n"
-    "Is this the case for your dataset?"
-    default="n",
-)
-
-if multiple_scans:
-
-    print()
-
-    scan_num = ask(
-        "What is the scan number for this dataset?\n\n"
-        "Example:\n"
-        "If this is CT_scan_03, enter 3.",
-        cast=int
-    )
-
-else:
-
-    scan_num = None
 
 
 slicepath = ask_existing_path(
@@ -85,62 +58,91 @@ slicepath = ask_existing_path(
     is_dir=True
 )
 
-slice_files, slice_indices = get_sorted_slice_files(slicepath)
-
 supported_extensions = list(SUPPORTED_SLICE_EXTENSIONS)
 
-n_slices = len(slice_files)
+while True:
 
-first_slice = os.path.basename(slice_files[0])
-last_slice = os.path.basename(slice_files[-1])
+    try:
+        slice_files, slice_indices = get_sorted_slice_files(slicepath)
 
-first_slice_index = int(slice_indices[0])
-last_slice_index = int(slice_indices[-1])
+    except RuntimeError as e:
 
-expected_slice_indices = list(
-    range(first_slice_index, first_slice_index + n_slices)
-)
+        print()
+        print(str(e))
+        print()
 
-slice_indices_are_consecutive = (
-    slice_indices == expected_slice_indices
-)
+        if "Duplicate numeric slice indices" in str(e):
+            print()
+            print("Each slice must have a unique numeric index.")
+            print("Please fix the slice filenames and rerun 00_share_data.py.")
+            raise SystemExit
 
-print()
-print(f"Found {n_slices} supported slice files.")
-print("First 5 slices:", [os.path.basename(f) for f in slice_files[:5]])
-print("Last 5 slices:", [os.path.basename(f) for f in slice_files[-5:]])
-print()
-print("Slice filenames were sorted by the numeric index in each filename.")
-print("Skipped numbers are okay. Duplicate numeric indices are not okay.")
-print()
+        print()
+        print("The slice folder could not be used.")
+        print("Please check the folder path and slice files, then try again.")
+        print()
+    
+        slicepath = ask_existing_path(
+            "What is the full path to the folder containing the slice files?",
+            is_dir=True
+        )
+
+        continue
+
+    n_slices = len(slice_files)
+    total_slice_bytes = sum(os.path.getsize(f) for f in slice_files)
+    total_slice_gb = total_slice_bytes / (1024 ** 3)
+
+    first_slice = os.path.basename(slice_files[0])
+    last_slice = os.path.basename(slice_files[-1])
+
+    first_slice_index = int(slice_indices[0])
+    last_slice_index = int(slice_indices[-1])
+
+    slice_indices_are_consecutive = (
+        np.diff(slice_indices) == 1
+    ).all()
+
+
+    print()
+    print(f"We found {n_slices} supported slice files.")
+    print("First 5 slices:", [os.path.basename(f) for f in slice_files[:5]])
+    print("Last 5 slices:", [os.path.basename(f) for f in slice_files[-5:]])
+    print()
+    print("Slice filenames were sorted by the numeric index in each filename.")
+
+    if slice_indices_are_consecutive:
+        print("Slice numbering is consecutive.")
+    else:
+        print("Skipped numeric indices were detected.")
+        print("This is okay and will not affect processing.")
+
+    print()
+
+    if ask_yes_no(
+        "Do these look like the correct slice files?",
+        default="y"
+    ):
+        break
+
+    print()
+    print("Let's try a different slice folder.")
+    print()
+
+    slicepath = ask_existing_path(
+        "What is the full path to the folder containing the slice files?",
+        is_dir=True
+    )
 
 layoutfile = ask_existing_path(
     "What is the path to the layout CSV file?\n"
     "Please include the filename in the path.\n"
-    "This file tells the workflow which specimens are expected in the scan and where they are located within the scan.",
+    "This file tells the workflow which specimens are expected in the scan and where they are located within the scan. \n"
+    "The layout CSV should describe this dataset only and contain: \n"
+    "  Column 1: Tier number \n"
+    "  Column 2: Row number  \n"
+    "  Column 3+: Specimen identifiers\n",
     is_dir=False
-)
-
-output_path = create_output_folder(scanpath, dataset_folder_name, scan_num)
-
-print()
-print(f"All workflow outputs will be saved here:")
-print(output_path)
-print()
-
-## I want to change the name of the parent output folder so let's take a look at that. 
-
-print()
-slice_index_fraction = ask_float_in_range(
-    "Choose a representative slice fraction for previewing in the next step.\n"
-    "This should land near the middle of a tier that contains specimens.\n"
-    "For one occupied tier, 0.50 is often good. For two occupied tiers, 0.25 or 0.75 may be better.\n"
-    "Avoid choosing a value that falls within an empty tier.\n"
-    "If the scan appears upside down relative to the layout later, we will correct that later in the workflow.\n"
-    "The default is 0.50. Press Enter to accept the default, or type a different value.",
-    minimum=0.0,
-    maximum=1.0,
-    default=0.50
 )
 
 print()
@@ -167,6 +169,34 @@ else:
         cast=float
     )
 
+output_path = create_output_folder(scanpath, dataset_folder_name)
+
+print()
+print(f"All workflow outputs will be saved here:")
+print(output_path)
+print()
+
+print(
+    "Thank you for sharing your data. \n"
+    "The next step will ask you to look at a representative slice from your slice folder, \n"
+    "compare that to the layout CSV, \n"
+    "and then based on what you see, select a few settings."
+)
+
+print()
+slice_index_fraction = ask_float_in_range(
+    "Choose a representative slice for previewing in the next step.\n"
+    "This should land near the middle of a tier that contains specimens.\n"
+    "For one occupied tier, 0.50 is often good. For two occupied tiers, 0.25 or 0.75 may be better.\n"
+    "Avoid choosing a value that falls within an empty tier.\n"
+    "If the scan appears upside down relative to the layout later, we will correct that later in the workflow.\n"
+    "The default is 0.50. Press Enter to accept the default, or type a different value.",
+    minimum=0.0,
+    maximum=1.0,
+    default=0.50
+)
+
+
 timer_00_stop = timeit.default_timer()
 
 # ============================================================
@@ -180,7 +210,7 @@ print("00_share_data.py runtime: ", runtime_00_seconds)
 # CREATE INITIAL WORKFLOW METADATA
 # ============================================================
 
-metadata_filename = build_metadata_filename(dataset_folder_name, scan_num)
+metadata_filename = build_metadata_filename(dataset_folder_name)
 metadata_path = os.path.join(output_path, metadata_filename)  
 
 metadata = {
@@ -188,7 +218,6 @@ metadata = {
         "status": "complete",
         
         "dataset_folder_name": dataset_folder_name,
-        "scan_num": scan_num,
         
         "scanpath": scanpath,
         "slicepath": slicepath,
@@ -199,6 +228,8 @@ metadata = {
         "supported_extensions": supported_extensions,
 
         "n_slices": n_slices,
+        "total_slice_bytes": total_slice_bytes,
+        "total_slice_gb": total_slice_gb,
         "first_slice": first_slice,
         "last_slice": last_slice,
         "first_slice_index": first_slice_index,

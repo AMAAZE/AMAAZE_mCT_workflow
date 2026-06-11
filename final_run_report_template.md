@@ -18,10 +18,12 @@ Unless otherwise noted, all file paths and outputs reported here correspond to t
 
 ## Summary sheet
 
+This run of {{ dataset_folder_name }} processed {{ total_slice_gb }} GB of input slice data and produced {{ n_meshes_generated }} surface meshes in {{ total_runtime_formatted }}, including {{ total_interactive_runtime_formatted }} of user interaction and review time and {{ total_automated_runtime_formatted }} of automated processing time. Automated processing used {{ extract_num_cores }} CPU cores for specimen extraction, {{ surface_num_cores }} CPU cores for surface generation, and {{ clean_num_cores }} CPU cores for mesh cleaning.
+
 | Original Data and Metadata | Results |
 |---|---|
 | Dataset name: **{{ dataset_folder_name }}** | Specimens identified: **{{ n_specimens_identified }}** |
-| Scan number: **{{ scan_num }}** | Specimens extracted: **{{ n_specimens_extracted }}**|
+| Data size: **{{ total_slice_gb }}** | Specimens extracted: **{{ n_specimens_extracted }}**|
 | Number of input slices: **{{ n_slices }}** | Surface meshes generated: **{{ n_meshes_generated }}** |
 | Layout file: **{{ layout_filename }}** | Cleaned meshes produced: **{{ n_meshes_cleaned }}** |
 
