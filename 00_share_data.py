@@ -30,38 +30,52 @@ print()
 print("Before we begin, we will ask a few questions about your data.")
 print()
 
-dataset_name = ask(
-    "What short name should we use for this dataset?\n"
-    "Example: bonefrags, teeth, beads"
-)  
-
-dataset_name = sanitize_name(dataset_name)
-
 print()
-scan_num = ask(
-    "We index scans by number because some datasets include a series of scans.\n"
-    "What scan number should we use for this dataset?\n"
-    "The default is 1. You can accept the default by pressing Enter.",
-    default=1,
-    cast=int
+dataset_folder_name = ask_dataset_folder_name(
+    "What is the name of the dataset folder where we can find the scan\n"
+    "data we will be processing today?\n\n"
+    "Example:\n"
+    "CT_scan_01\n\n"
+    "You will be asked for this folder name again in subsequent\n"
+    "workflow steps, so keep it handy.\n\n"
+    "This folder name is also used to name workflow outputs. \n"
+    "If it is very long, your workflow output names will also be very long."    
 )
 
 print()
 scanpath = ask_existing_path(
-    "What is the path to the folder for this scan dataset?\n"
-    "This is the main data folder for the scan we are processing.\n"
+    "What is the entire path to the folder for this scan dataset?\n"
     "Please include the dataset folder itself in the path.\n"
     "Example:\n"
     "C:/MyProject/CT_scan_01",
     is_dir=True
 )
 
-output_path = create_output_folder(scanpath, dataset_name, scan_num)
+print()
+scan_num = ask(
+    "Sometimes people have multiple datasets and differentiate \n"
+    "their scans by number. \n"
+    "Example: \n"
+    "CT_scan_01, CT_scan_02, CT_scan_03, etc. \n"
+    "Is this the case for your dataset?"
+    default="n",
+)
 
-print()
-print(f"Workflow outputs will be saved here:")
-print(output_path)
-print()
+if multiple_scans:
+
+    print()
+
+    scan_num = ask(
+        "What is the scan number for this dataset?\n\n"
+        "Example:\n"
+        "If this is CT_scan_03, enter 3.",
+        cast=int
+    )
+
+else:
+
+    scan_num = None
+
 
 slicepath = ask_existing_path(
     "What is the full path to the folder containing the slice files?\n"
@@ -106,6 +120,15 @@ layoutfile = ask_existing_path(
     "This file tells the workflow which specimens are expected in the scan and where they are located within the scan.",
     is_dir=False
 )
+
+output_path = create_output_folder(scanpath, dataset_folder_name, scan_num)
+
+print()
+print(f"All workflow outputs will be saved here:")
+print(output_path)
+print()
+
+## I want to change the name of the parent output folder so let's take a look at that. 
 
 print()
 slice_index_fraction = ask_float_in_range(
@@ -157,14 +180,14 @@ print("00_share_data.py runtime: ", runtime_00_seconds)
 # CREATE INITIAL WORKFLOW METADATA
 # ============================================================
 
-metadata_filename = build_metadata_filename(dataset_name, scan_num)
+metadata_filename = build_metadata_filename(dataset_folder_name, scan_num)
 metadata_path = os.path.join(output_path, metadata_filename)  
 
 metadata = {
     "00_share_data": {
         "status": "complete",
         
-        "dataset_name": dataset_name,
+        "dataset_folder_name": dataset_folder_name,
         "scan_num": scan_num,
         
         "scanpath": scanpath,

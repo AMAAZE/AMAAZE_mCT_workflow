@@ -20,7 +20,7 @@ Unless otherwise noted, all file paths and outputs reported here correspond to t
 
 | Original Data and Metadata | Results |
 |---|---|
-| Dataset name: **{{ dataset_name }}** | Specimens identified: **{{ n_specimens_identified }}** |
+| Dataset name: **{{ dataset_folder_name }}** | Specimens identified: **{{ n_specimens_identified }}** |
 | Scan number: **{{ scan_num }}** | Specimens extracted: **{{ n_specimens_extracted }}**|
 | Number of input slices: **{{ n_slices }}** | Surface meshes generated: **{{ n_meshes_generated }}** |
 | Layout file: **{{ layout_filename }}** | Cleaned meshes produced: **{{ n_meshes_cleaned }}** |
@@ -106,7 +106,7 @@ Unless otherwise noted, all file paths and outputs reported here correspond to t
 
 `00_share_data.py`
 
-The workflow began by collecting basic information about the scan dataset and checking that the required input files could be found. This step defines the dataset name, scan number, source folders, layout file, slice stack, voxel scale, and output location used throughout the rest of the workflow. For this run, the dataset was named **{{ dataset_name }}** and processed as scan **{{ scan_num }}**. 
+The workflow began by collecting basic information about the scan dataset and checking that the required input files could be found. This step defines the dataset name, scan number, source folders, layout file, slice stack, voxel scale, and output location used throughout the rest of the workflow. For this run, the dataset was named **{{ dataset_folder_name }}** and processed as scan **{{ scan_num }}**. 
 
 The workflow found **{{ n_slices }}** supported slice files. The first detected slice was **{{ first_slice }}** and the last detected slice was **{{ last_slice }}**. Slice filenames were sorted using their numeric filename indices. The first detected slice index was **{{ first_slice_index }}** and the last detected slice index was **{{ last_slice_index }}**. Slice numbering was evaluated for consecutiveness and found to be **{{ slice_indices_are_consecutive }}**.
 

@@ -164,7 +164,7 @@ def write_final_run_report(metadata):
     step05 = metadata["05_clean_meshes"]
 
     output_path = step00["output_path"]
-    dataset_name = step00["dataset_name"]
+    dataset_folder_name = step00["dataset_folder_name"]
     scan_num = step00["scan_num"]
 
     timestamp = current_timestamp_for_filename()
@@ -178,7 +178,7 @@ def write_final_run_report(metadata):
         "final_run_report_template.md"
     )
 
-    report_base = f"final_run_report_{dataset_name}_scan{scan_num}_{timestamp}"
+    report_base = f"final_run_report_{dataset_folder_name}_scan{scan_num}_{timestamp}"
     markdown_path = os.path.join(output_path, report_base + ".md")
     pdf_path = os.path.join(output_path, report_base + ".pdf")
 
@@ -213,7 +213,7 @@ def write_final_run_report(metadata):
         "report_timestamp": timestamp,
         "report_timestamp_human":report_timestamp_human,
 
-        "dataset_name": dataset_name,
+        "dataset_folder_name": dataset_folder_name,
         "scan_num": scan_num,
         "scanpath": step00["scanpath"],
         "slicepath": step00["slicepath"],
@@ -345,7 +345,6 @@ def write_final_run_report(metadata):
 def find_metadata_file_in_dataset(dataset_path):
     """
     Find the current workflow metadata file inside a dataset folder.
-    Prefer metadata stored in an AMAAZE output folder.
     """
 
     dataset_path = normalize_path(dataset_path)
@@ -433,19 +432,26 @@ def normalize_path(path_text):
             path_text.strip().strip('"').strip("'")
         )
     )
-
-
-def sanitize_name(name):
+  
+def ask_dataset_folder_name(prompt):
     """
-    Convert user-provided text into a safe filename component.
+    Ask for the dataset folder name.
+
+    This is the name of the dataset directory only, not a full path.
+    It is used throughout the workflow as the dataset identifier.
     """
 
-    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(name)).strip("_")
+    while True:
 
-    if safe_name == "":
-        raise RuntimeError("Dataset name cannot be empty after filename cleanup.")
+        dataset_folder_name = ask(prompt)
 
-    return safe_name
+        if dataset_folder_name == "":
+            print()
+            print("Please enter a dataset folder name.")
+            print()
+            continue
+
+        return dataset_folder_name
     
 def ask_existing_path(prompt, is_dir=None):
     """
@@ -492,26 +498,33 @@ def ask_float_in_range(prompt, minimum, maximum, default=None):
 # Metadata creation and initialization.
 # ============================================================
 
-def build_metadata_filename(dataset_name, scan_num):
+def build_metadata_filename(dataset_folder_name, scan_num):
     """
     Create a standardized metadata filename for a dataset and scan.
     """
-    safe_dataset_name = sanitize_name(dataset_name)
-    return f"{safe_dataset_name}_scan{scan_num}_metadata.json"
+    
+    if scan_num is None:
+        return f"{dataset_folder_name}_metadata.json"
+        
+    return f"{dataset_folder_name}_scan{scan_num}_metadata.json"
 
-def create_output_folder(scanpath, dataset_name, scan_num):
+def create_output_folder(scanpath, dataset_folder_name, scan_num):
     """
     Create and return the standardized AMAAZE output folder for this scan.
     """
 
-    safe_dataset_name = sanitize_name(dataset_name)
-    output_folder_name = f"{safe_dataset_name}_scan{scan_num}_AMAAZE_outputs"
+    if scan_num is None:
+        output_folder_name = f"{dataset_folder_name}_AMAAZE_outputs"
+    else:
+        output_folder_name = (
+            f"{dataset_folder_name}_scan{scan_num}_AMAAZE_outputs"
+        )
+        
     output_path = os.path.join(scanpath, output_folder_name)
 
     os.makedirs(output_path, exist_ok=True)
 
-    return output_path
-    
+    return output_path   
     
 # ============================================================
 # SHARED SLICE STACK HELPERS
