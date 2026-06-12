@@ -142,34 +142,87 @@ tier_mask = np.array([np.any(layout_by_tier[t]["mask"]) for t in tier_ids])
 # prominence is used to choose the strongest internal tier boundaries
 # expected from the layout CSV.
 
-q = -np.mean(np.mean(vol,1),1)
-tier_signal = q.copy()
-q = q - q.min()
+mean_intensity_profile_z = -np.mean(np.mean(vol, axis=1), axis=1)
+
+shifted_mean_intensity_profile_z = (
+    mean_intensity_profile_z
+    - mean_intensity_profile_z.min()
+)
 
 """
 NOTE(dev): 3e7 is a magic number. Review
 """
-thresh = 3e7/(vol.shape[1]*vol.shape[2])
-q[q<thresh] = 0
+#thresh = 3e7/(vol.shape[1]*vol.shape[2])
+#shifted_mean_intensity_profile_z[
+#    shifted_mean_intensity_profile_z<thresh
+#] = 0
 
 """
 NOTE(dev): width=10 is a magic number. Review
 """
-vert_pks, peak_props = find_peaks(q, width=10, prominence=0)
+vert_pks, peak_props = find_peaks(
+    shifted_mean_intensity_profile_z, 
+    width=10, 
+    prominence=0
+)
+
+#########
+print()
+print("Tier-boundary candidate peak diagnostics")
+print("index | prominence | width | left_base | right_base")
+
+for i, peak in enumerate(vert_pks):
+    print(
+        f"{i:>5} | "
+        f"{int(peak):>5} | "
+        f"{peak_props['prominences'][i]:>10.2f} | "
+        f"{peak_props['widths'][i]:>10.2f} | "
+        f"{int(peak_props['left_bases'][i]):>9} | "
+        f"{int(peak_props['right_bases'][i]):>10}"
+    )
+print()
 
 suggested_tier_boundaries = select_tier_boundaries_by_prominence(
-    q=q,
+    shifted_mean_intensity_profile_z,
     peaks=vert_pks,
     peak_props=peak_props,
     n_tiers=n_tiers
 )
+############
 
-fig = plt.figure()
-plt.plot(np.arange(len(q)),tier_signal)
-plt.xlabel('slice height (z)'); plt.ylabel('(-) average tier density'); plt.title('tier segmentation')
+#fig = plt.figure()
+#plt.plot(np.arange(len(shifted_mean_intensity_profile_z)), mean_intensity_profile_z)
+#plt.xlabel('slice height (z)'); plt.ylabel('(-) average tier density'); plt.title('tier segmentation')
+#
+#for vvv in suggested_tier_boundaries:
+#    plt.axvline(x=vvv, color='green', linestyle='--', linewidth=2)
 
+z_reduced = np.arange(len(mean_intensity_profile_z))
+
+fig, axs = plt.subplots(1, 2, figsize=(16, 5), sharey=True)
+
+axs[0].plot(z_reduced, shifted_mean_intensity_profile_z)
+axs[0].plot(
+    vert_pks,
+    shifted_mean_intensity_profile_z[vert_pks],
+    "ro",
+    label="candidate peaks"
+)
+axs[0].set_xlabel("slice height (z)")
+axs[0].set_ylabel("shifted_mean_intensity_profile_z")
+axs[0].set_title("Candidate peaks from find_peaks()")
+axs[0].legend()
+
+axs[1].plot(z_reduced, shifted_mean_intensity_profile_z)
 for vvv in suggested_tier_boundaries:
-    plt.axvline(x=vvv, color='green', linestyle='--', linewidth=2)
+    axs[1].axvline(x=vvv, color="green", linestyle="--", linewidth=2)
+
+axs[1].set_xlabel("slice height (z)")
+axs[1].set_title("Suggested tier boundaries")
+
+fig.suptitle("Tier segmentation review")
+plt.tight_layout()
+
 
 print(
     "\nA tier-boundary review window is opening.\n"
@@ -181,7 +234,8 @@ print(
     f"Non-empty tiers: {np.sum(tier_mask)}\n"
 )
         
-clicked_x = collect_tier_boundary_clicks(fig, plt.gca())
+#clicked_x = collect_tier_boundary_clicks(fig, plt.gca())
+clicked_x = collect_tier_boundary_clicks(fig, axs[1])
 
 plt.show(block=False)        
         
@@ -195,7 +249,7 @@ plt.close(fig)
 if len(clicked_x) > 0:
     ex = np.array(clicked_x).astype(int)
     ex[ex<0] = 0
-    ex[ex>len(q)] = len(q)
+    ex[ex>len(shifted_mean_intensity_profile_z)] = len(shifted_mean_intensity_profile_z)
     tier_detection_method = "manual_override"
     print("new vertical peaks", ex)
 else:

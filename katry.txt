@@ -6,7 +6,11 @@ High priority fixes to the flow (flow won't work)
 
 - We need to figure out the z-window value issue. The data shapes are consistent and even a bit smoother at higher averaging but our selection of condidate peaks is brittle. Look at the testing Google Slide in the shared Sam/Jeff/Kat folder and also the conv entitled,"Voxel spacing adjustment" then scroll up until you find a wall of text that begins with, "I think you're zeroing in on the right problem." I think this is playing into the run time issues while writing the npy files during the extraction phase. 
 
+- Once the tier division is established test the remainder of the workflow on the various datasets to ensure divider detection is robust. 
+
 - Test the ISO interface
+
+- Makes sure it only looks for the exact output folder it created in 00 and anything names differently will be ignored and naything names the same will be used which means that all files inside the output folder excepting the final report md and pdf---which is timestamped---will be overwritten.
 
 ---------------------------------------------------------------------------------------------------------------------
 Usability concerns (flow will work but could be better)
@@ -35,6 +39,8 @@ Update / create accessory scripts (not necessary for workflow but easier to adju
     - Add an immediate, before continuing with this script make sure you rename the output folders from previous runs so you don't overwrite anything print statement. 
 
 - clean up the .py that outputs jpg of dcm slices so they can easily be seen without having to import them one-by-one into photoshop. 
+
+- rework 00's rotation interface so that horizontal and vertical guidelines show up at the center of the image and either the user can click on the image and rotate it such that their dividers appear parallel to the guidelines as a means for assessing degree of rotation, or a separate window pops up with a slider and window with up/down arrows next to it and in the window is the current rotation angle and the user can use the slider or type into the window or advance with the arrows to give rotation. As opposed to an iterative guess input affirm loop. 
 
 ---------------------------------------------------------------------------------------------------------------------
 Documentation (Address at the end once everything works and is usable)

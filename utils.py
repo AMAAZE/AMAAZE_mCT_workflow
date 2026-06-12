@@ -819,7 +819,7 @@ def resize_preserve_aspect(im, max_edge=225):
 # FUNCTIONS USED BY 03_segment.py
 # ============================================================
 
-def select_tier_boundaries_by_prominence(q, peaks, peak_props, n_tiers): 
+def select_tier_boundaries_by_prominence(mean_intensity_profile_z, peaks, peak_props, n_tiers): 
     """
     Select tier boundaries using peak prominence.
 
@@ -838,11 +838,20 @@ def select_tier_boundaries_by_prominence(q, peaks, peak_props, n_tiers):
 
     n_internal_needed = n_tiers - 1
 
+    # Original
     left_boundary = int(peaks[0])
-    right_boundary = int(len(q))
+    right_boundary = int(len(mean_intensity_profile_z))
 
-    internal_peaks = peaks[1:-1]
-    internal_prominences = prominences[1:-1]
+    # New
+    # left_boundary = 0
+    # right_boundary = len(mean_intensity_profile_z)
+
+
+    #internal_peaks = peaks[1:-1]
+    #internal_prominences = prominences[1:-1]
+
+    internal_peaks = peaks
+    internal_prominences = prominences
 
     if len(internal_peaks) < n_internal_needed:
         raise RuntimeError(

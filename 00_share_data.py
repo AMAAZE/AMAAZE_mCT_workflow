@@ -99,9 +99,9 @@ while True:
     first_slice_index = int(slice_indices[0])
     last_slice_index = int(slice_indices[-1])
 
-    slice_indices_are_consecutive = (
-        np.diff(slice_indices) == 1
-    ).all()
+    slice_indices_are_consecutive = bool(
+        (np.diff(slice_indices) == 1).all()
+    )
 
 
     print()
