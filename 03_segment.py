@@ -157,19 +157,15 @@ NOTE(dev): 3e7 is a magic number. Review
 #    shifted_mean_intensity_profile_z<thresh
 #] = 0
 
-"""
-NOTE(dev): width=10 is a magic number. Review
-"""
-vert_pks, peak_props = find_peaks(
-    shifted_mean_intensity_profile_z, 
-    width=10, 
-    prominence=0
+vert_pks, peak_props, boundary_scores = generate_tier_boundary_candidates(
+    shifted_mean_intensity_profile_z,
+    n_tiers
 )
 
 #########
 print()
 print("Tier-boundary candidate peak diagnostics")
-print("index | prominence | width | left_base | right_base")
+print("index | location | prominence | width | score | left_base | right_base")
 
 for i, peak in enumerate(vert_pks):
     print(
@@ -177,17 +173,44 @@ for i, peak in enumerate(vert_pks):
         f"{int(peak):>5} | "
         f"{peak_props['prominences'][i]:>10.2f} | "
         f"{peak_props['widths'][i]:>10.2f} | "
+        f"{boundary_scores[i]:>10.2f} | "
         f"{int(peak_props['left_bases'][i]):>9} | "
         f"{int(peak_props['right_bases'][i]):>10}"
     )
 print()
 
-suggested_tier_boundaries = select_tier_boundaries_by_prominence(
+tier_boundary_result = select_tier_boundaries_by_edge_and_score(
     shifted_mean_intensity_profile_z,
-    peaks=vert_pks,
-    peak_props=peak_props,
-    n_tiers=n_tiers
+    candidate_peaks=vert_pks,
+    candidate_peak_props=peak_props,
+    candidate_boundary_scores=boundary_scores,
+    n_tiers=n_tiers,
 )
+
+suggested_tier_boundaries = tier_boundary_result["selected_boundaries"]
+left_edge = tier_boundary_result["left_edge"]
+right_edge = tier_boundary_result["right_edge"]
+selected_internal = tier_boundary_result["selected_internal"]
+
+print()
+print("Edge detection diagnostics")
+print(f"left_edge:  {left_edge}")
+print(f"right_edge: {right_edge}")
+
+left_runs = get_monotonic_runs(shifted_mean_intensity_profile_z)
+right_runs = get_monotonic_runs(shifted_mean_intensity_profile_z[::-1])
+
+print()
+print("First 8 left-edge monotonic runs")
+for run in left_runs[:8]:
+    print(run)
+
+print()
+print("First 8 right-edge monotonic runs, shown in reversed-profile coordinates")
+for run in right_runs[:8]:
+    print(run)
+print()
+
 ############
 
 #fig = plt.figure()
@@ -201,24 +224,52 @@ z_reduced = np.arange(len(mean_intensity_profile_z))
 
 fig, axs = plt.subplots(1, 2, figsize=(16, 5), sharey=True)
 
-axs[0].plot(z_reduced, shifted_mean_intensity_profile_z)
+axs[0].plot(
+    z_reduced,
+    shifted_mean_intensity_profile_z,
+)
+
 axs[0].plot(
     vert_pks,
     shifted_mean_intensity_profile_z[vert_pks],
     "ro",
-    label="candidate peaks"
+    label="candidate peaks",
 )
+
+axs[0].axvline(
+    left_edge,
+    color="purple",
+    linestyle="--",
+    linewidth=2,
+    label="detected edges",
+)
+
+axs[0].axvline(
+    right_edge,
+    color="purple",
+    linestyle="--",
+    linewidth=2,
+)
+
 axs[0].set_xlabel("slice height (z)")
 axs[0].set_ylabel("shifted_mean_intensity_profile_z")
-axs[0].set_title("Candidate peaks from find_peaks()")
+axs[0].set_title("Candidate peaks and independently detected edges")
 axs[0].legend()
 
 axs[1].plot(z_reduced, shifted_mean_intensity_profile_z)
-for vvv in suggested_tier_boundaries:
-    axs[1].axvline(x=vvv, color="green", linestyle="--", linewidth=2)
+
+axs[1].axvline(left_edge, color="purple", linestyle="--", linewidth=2, label="detected edges")
+axs[1].axvline(right_edge, color="purple", linestyle="--", linewidth=2)
+
+for vvv in selected_internal:
+    axs[1].axvline(vvv, color="green", linestyle="--", linewidth=2, label="selected internal divider")
+
+handles, labels = axs[1].get_legend_handles_labels()
+by_label = dict(zip(labels, handles))
+axs[1].legend(by_label.values(), by_label.keys())
 
 axs[1].set_xlabel("slice height (z)")
-axs[1].set_title("Suggested tier boundaries")
+axs[1].set_title("Suggested tier boundaries (edge-aware)")
 
 fig.suptitle("Tier segmentation review")
 plt.tight_layout()
@@ -226,7 +277,9 @@ plt.tight_layout()
 
 print(
     "\nA tier-boundary review window is opening.\n"
-    "Green lines show the suggested tier boundaries.\n"
+    "Purple dashed lines show the independently detected package edges.\n"
+    "Green dashed lines show the selected internal tier boundaries.\n"
+    "Together they form the suggested tier boundaries.\n"
     "If the suggestions look correct, do not click anything.\n"
     "If they are incorrect, click the graph where the tier boundaries should be.\n"
     "Each click will create a red divider line.\n"

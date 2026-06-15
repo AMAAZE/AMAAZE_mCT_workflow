@@ -869,6 +869,438 @@ def select_tier_boundaries_by_prominence(mean_intensity_profile_z, peaks, peak_p
     ))
 
     return selected.astype(int)
+###########################################################
+
+def generate_tier_boundary_candidates(
+    mean_intensity_profile_z,
+    n_tiers
+):
+    """
+    Generate candidate tier-boundary peaks and their boundary scores.
+    """
+
+    peaks, peak_props = find_peaks(
+        mean_intensity_profile_z,
+        prominence=0,
+        width=0
+    )
+
+    boundary_scores = (
+        peak_props["prominences"]
+        * np.sqrt(peak_props["widths"])
+    )
+
+    rank_order = np.argsort(boundary_scores)[::-1]
+
+    peaks = peaks[rank_order]
+    boundary_scores = boundary_scores[rank_order]
+    n_candidate_peaks = min(len(peaks), n_tiers + 1)
+
+    candidate_peak_props = {}
+
+    for key in peak_props:
+        candidate_peak_props[key] = peak_props[key][rank_order][:n_candidate_peaks]
+
+    candidate_peaks = peaks[:n_candidate_peaks]
+    candidate_boundary_scores = boundary_scores[:n_candidate_peaks]
+
+    return candidate_peaks, candidate_peak_props, candidate_boundary_scores
+
+def estimate_jitter_tolerance(profile):
+    step_sizes = np.abs(np.diff(profile))
+    step_sizes = step_sizes[step_sizes > 0]
+
+    if len(step_sizes) == 0:
+        return np.finfo(float).eps
+
+    sorted_steps = np.sort(step_sizes)
+    step_jumps = np.diff(sorted_steps)
+
+    if len(step_jumps) == 0:
+        return sorted_steps[0]
+
+    largest_jump_index = np.argmax(step_jumps)
+
+    # Natural-gap estimate: largest value before the big jump.
+    natural_gap_tolerance = sorted_steps[largest_jump_index]
+
+    # Fallback estimate if no clear separation exists.
+    fallback_tolerance = np.percentile(sorted_steps, 75)
+
+    # For first prototype: use the natural gap when it is larger than fallback;
+    # otherwise use the fallback.
+    return max(natural_gap_tolerance, fallback_tolerance)
+
+def get_monotonic_runs(profile):
+    """
+    Collapse a 1D profile into monotonic runs.
+
+    Each run records the start/end indices, direction, and total magnitude
+    of a coherent upward or downward movement.
+    """
+
+    profile = np.asarray(profile).astype(float)
+
+    runs = []
+
+    if len(profile) < 2:
+        return runs
+
+    run_start = 0
+    direction = 0
+
+    for i in range(1, len(profile)):
+        step = profile[i] - profile[i - 1]
+        step_direction = np.sign(step)
+
+        if step_direction == 0:
+            continue
+
+        if direction == 0:
+            direction = step_direction
+            continue
+
+        if step_direction != direction:
+            run_end = i - 1
+
+            runs.append({
+                "start_index": int(run_start),
+                "end_index": int(run_end),
+                "start_value": float(profile[run_start]),
+                "end_value": float(profile[run_end]),
+                "direction": int(direction),
+                "magnitude": float(abs(profile[run_end] - profile[run_start])),
+            })
+
+            run_start = i - 1
+            direction = step_direction
+
+    run_end = len(profile) - 1
+
+    runs.append({
+        "start_index": int(run_start),
+        "end_index": int(run_end),
+        "start_value": float(profile[run_start]),
+        "end_value": float(profile[run_end]),
+        "direction": int(direction),
+        "magnitude": float(abs(profile[run_end] - profile[run_start])),
+    })
+
+    return runs
+
+def estimate_run_magnitude_cutoff(runs):
+    """
+    Estimate the cutoff separating small jitter runs from large structural runs.
+    """
+
+    magnitudes = np.array([
+        run["magnitude"]
+        for run in runs
+        if run["magnitude"] > 0
+    ])
+
+    if len(magnitudes) == 0:
+        return np.finfo(float).eps
+
+    if len(magnitudes) == 1:
+        return magnitudes[0]
+
+    sorted_magnitudes = np.sort(magnitudes)
+    jumps = np.diff(sorted_magnitudes)
+
+    if len(jumps) == 0:
+        return sorted_magnitudes[0]
+
+    largest_jump_index = np.argmax(jumps)
+
+    natural_cutoff = sorted_magnitudes[largest_jump_index]
+    fallback_cutoff = np.percentile(sorted_magnitudes, 75)
+
+    return max(natural_cutoff, fallback_cutoff)
+
+
+def find_left_edge(profile):
+    """
+    Find the dominant left package edge using monotonic-run magnitudes.
+
+    Small back-and-forth runs are treated as jitter. The edge is the
+    highest point reached before the first large downward departure.
+    """
+
+    profile = np.asarray(profile).astype(float)
+
+    runs = get_monotonic_runs(profile)
+    run_magnitude_cutoff = estimate_run_magnitude_cutoff(runs)
+
+    left_edge_index = 0
+    left_edge_value = profile[0]
+
+    for run in runs:
+        start_index = run["start_index"]
+        end_index = run["end_index"]
+
+        run_slice = profile[start_index:end_index + 1]
+        local_max_offset = np.argmax(run_slice)
+        local_max_index = start_index + local_max_offset
+        local_max_value = profile[local_max_index]
+
+        if local_max_value > left_edge_value:
+            left_edge_value = local_max_value
+            left_edge_index = local_max_index
+
+        if (
+            run["direction"] < 0
+            and run["magnitude"] > run_magnitude_cutoff
+        ):
+
+            return int(left_edge_index)
+
+        return int(left_edge_index)
+
+
+
+def find_right_edge(profile):
+
+    reversed_profile = np.asarray(profile)[::-1]
+
+    reversed_left_edge_index = find_left_edge(reversed_profile)
+
+    right_edge_index = (
+        len(profile)
+        - 1
+        - reversed_left_edge_index
+    )
+
+    return right_edge_index
+
+def remove_edge_adjacent_duplicate_candidates(
+    left_edge,
+    right_edge,
+    candidate_peaks,
+    candidate_boundary_scores,
+    n_tiers,
+):
+    """
+    Remove candidate peaks that sit implausibly close to an independently
+    detected edge, as long as enough internal candidates remain.
+    """
+
+    candidate_peaks = np.asarray(candidate_peaks).astype(int)
+    candidate_boundary_scores = np.asarray(candidate_boundary_scores).astype(float)
+
+    n_internal_needed = n_tiers - 1
+
+    if len(candidate_peaks) <= n_internal_needed:
+        return candidate_peaks, candidate_boundary_scores
+
+    provisional_boundaries = np.sort(
+        np.concatenate((
+            np.array([left_edge]),
+            candidate_peaks,
+            np.array([right_edge])
+        ))
+    )
+
+    gaps = np.diff(provisional_boundaries)
+
+    if len(gaps) == 0:
+        return candidate_peaks, candidate_boundary_scores
+
+    typical_gap = np.median(gaps)
+
+    candidates_to_remove = []
+
+    positive_gaps = gaps[gaps > 0]
+
+    if len(positive_gaps) > 0:
+        small_gap_cutoff = np.min(positive_gaps)
+    else:
+        small_gap_cutoff = typical_gap
+
+    left_neighbor = candidate_peaks[np.argmin(np.abs(candidate_peaks - left_edge))]
+    left_gap = abs(left_neighbor - left_edge)
+
+    right_neighbor = candidate_peaks[np.argmin(np.abs(candidate_peaks - right_edge))]
+    right_gap = abs(right_neighbor - right_edge)
+
+    if left_gap <= small_gap_cutoff:
+       candidates_to_remove.append(left_neighbor)
+
+    if right_gap <= small_gap_cutoff:
+       candidates_to_remove.append(right_neighbor)
+
+    keep_mask = ~np.isin(candidate_peaks, candidates_to_remove)
+
+    candidate_peaks_after_removal = candidate_peaks[keep_mask]
+    candidate_scores_after_removal = candidate_boundary_scores[keep_mask]
+
+    if len(candidate_peaks_after_removal) < n_internal_needed:
+        print(
+            "WARNING: Edge-adjacent candidate removal would leave too few "
+            "internal candidates, so no edge-adjacent candidates were removed."
+        )
+        return candidate_peaks, candidate_boundary_scores
+
+    return candidate_peaks_after_removal, candidate_scores_after_removal
+
+def select_tier_boundaries_by_edge_and_score(
+    mean_intensity_profile_z,
+    candidate_peaks,
+    candidate_peak_props,
+    candidate_boundary_scores,
+    n_tiers,
+):
+    """
+    Select final tier boundaries using independently detected package edges
+    and ranked internal candidate peaks.
+    """
+
+    profile = np.asarray(mean_intensity_profile_z)
+
+    left_edge = find_left_edge(profile)
+    right_edge = find_right_edge(profile)
+
+    candidate_peaks = np.asarray(candidate_peaks).astype(int)
+    candidate_boundary_scores = np.asarray(candidate_boundary_scores).astype(float)
+
+    n_internal_needed = n_tiers - 1
+
+    internal_peaks, internal_scores = remove_edge_adjacent_duplicate_candidates(
+        left_edge=left_edge,
+        right_edge=right_edge,
+        candidate_peaks=candidate_peaks,
+        candidate_boundary_scores=candidate_boundary_scores,
+        n_tiers=n_tiers,
+    )
+
+    if len(internal_peaks) < n_internal_needed:
+        print(
+            f"WARNING: Expected {n_internal_needed} internal tier boundaries, "
+            f"but only found {len(internal_peaks)} candidates. "
+            "Continuing so the user can manually override if needed."
+        )
+
+    n_to_select = min(len(internal_peaks), n_internal_needed)
+
+    rank_order = np.argsort(internal_scores)[::-1]
+    selected_internal = internal_peaks[rank_order[:n_to_select]]
+    selected_internal = np.sort(selected_internal)
+
+    selected_boundaries = np.concatenate((
+        np.array([left_edge]),
+        selected_internal,
+        np.array([right_edge])
+    ))
+
+    return {
+    "selected_boundaries": selected_boundaries.astype(int),
+    "left_edge": int(left_edge),
+    "right_edge": int(right_edge),
+    "selected_internal": selected_internal.astype(int),
+    "candidate_peaks": candidate_peaks.astype(int),
+    "internal_peaks_after_edge_removal": internal_peaks.astype(int),
+    "n_internal_needed": int(n_internal_needed),
+    "n_internal_selected": int(len(selected_internal)),
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###########################################################
+
+def select_tier_boundaries_by_edge_and_prominence(
+    mean_intensity_profile_z,
+    peaks,
+    peak_props,
+    n_tiers,
+    edge_tolerance=5,
+):
+    """
+    Determine package edges independently and select internal tier
+    boundaries by prominence.
+
+    Strategy
+    --------
+    1. Determine left and right package edges independently.
+    2. Remove any find_peaks() candidates that duplicate those edges.
+    3. Rank remaining candidates by prominence.
+    4. Keep the strongest n_tiers - 1 internal dividers.
+    5. Return [left_edge, internal..., right_edge].
+    """
+
+    profile = np.asarray(mean_intensity_profile_z)
+    peaks = np.asarray(peaks).astype(int)
+    prominences = np.asarray(
+        peak_props["prominences"]
+    ).astype(float)
+
+    n_internal_needed = n_tiers - 1
+
+    # --------------------------------------------------
+    # Determine package edges independently.
+    #
+    # TODO:
+    # Replace this placeholder with the final edge-finding
+    # algorithm. For now we simply use the scan ends.
+    # --------------------------------------------------
+
+    left_edge = 0
+    right_edge = len(profile)
+
+    # --------------------------------------------------
+    # Remove candidates that coincide with edges.
+    # --------------------------------------------------
+
+    keep_mask = (
+        (np.abs(peaks - left_edge) > edge_tolerance)
+        &
+        (np.abs(peaks - right_edge) > edge_tolerance)
+    )
+
+    internal_peaks = peaks[keep_mask]
+    internal_prominences = prominences[keep_mask]
+
+    if len(internal_peaks) < n_internal_needed:
+        raise RuntimeError(
+            f"Expected at least {n_internal_needed} "
+            f"internal candidates but found "
+            f"{len(internal_peaks)}."
+        )
+
+    # --------------------------------------------------
+    # Keep the strongest internal dividers.
+    # --------------------------------------------------
+
+    keep = np.argsort(
+        internal_prominences
+    )[-n_internal_needed:]
+
+    selected_internal = np.sort(
+        internal_peaks[keep]
+    )
+
+    return np.concatenate((
+        np.array([left_edge]),
+        selected_internal,
+        np.array([right_edge]),
+    )).astype(int)
 
 
 def estimate_grid_rotation_by_coherence(im, angle_min=-5, angle_max=5, angle_step=0.25):

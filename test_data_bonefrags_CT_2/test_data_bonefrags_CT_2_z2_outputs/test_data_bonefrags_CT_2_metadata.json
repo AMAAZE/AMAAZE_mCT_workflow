@@ -56,5 +56,104 @@
       225
     ],
     "runtime_seconds": 14.077542700004415
+  },
+  "03_segment": {
+    "status": "complete",
+    "extraction_plan_csv": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\test_data_bonefrags_CT_2_z2_outputs\\test_data_bonefrags_CT_2_extraction_plan.csv",
+    "n_tiers_expected": 2,
+    "n_active_tiers": 2,
+    "n_expected_specimens": 8,
+    "n_extracted_specimens": 8,
+    "n_extraction_regions": 8,
+    "tier_segmentation": {
+      "tier_boundaries": [
+        9,
+        829,
+        1719
+      ],
+      "n_detected_tiers": 2,
+      "tier_detection_method": "automatic_peaks",
+      "reverse_detected_tier_order": true,
+      "active_tier_indices": [
+        0,
+        1
+      ],
+      "active_tier_ranges": [
+        [
+          829,
+          1719
+        ],
+        [
+          9,
+          829
+        ]
+      ]
+    },
+    "tier_normalization": {
+      "rotation_method": "estimate_grid_rotation_by_coherence",
+      "angle_min": -5,
+      "angle_max": 5,
+      "angle_step": 0.25,
+      "tier_rotations": [
+        {
+          "tier_id": 1,
+          "rotation_angle": 0.0,
+          "angle_min": -5,
+          "angle_max": 5,
+          "angle_step": 0.25,
+          "best_score": 0.7062151199417348
+        },
+        {
+          "tier_id": 2,
+          "rotation_angle": 0.0,
+          "angle_min": -5,
+          "angle_max": 5,
+          "angle_step": 0.25,
+          "best_score": 0.6297471840711161
+        }
+      ]
+    },
+    "divider_review": {
+      "review_method": "automated_proposal_with_manual_override",
+      "tier_divider_definitions": [
+        {
+          "tier_id": 1,
+          "proposed_row_dividers": [
+            50
+          ],
+          "proposed_col_dividers": [
+            70,
+            144
+          ],
+          "final_row_dividers": [
+            50
+          ],
+          "final_col_dividers": [
+            70,
+            144
+          ],
+          "divider_method": "automatic_accepted"
+        },
+        {
+          "tier_id": 2,
+          "proposed_row_dividers": [
+            44
+          ],
+          "proposed_col_dividers": [
+            76,
+            150
+          ],
+          "final_row_dividers": [
+            44
+          ],
+          "final_col_dividers": [
+            76,
+            150
+          ],
+          "divider_method": "automatic_accepted"
+        }
+      ]
+    },
+    "runtime_seconds": 142.20011229999363
   }
 }
