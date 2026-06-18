@@ -8,13 +8,21 @@ High priority fixes to the flow (flow won't work)
 
 - Once the tier division is established test the remainder of the workflow on the various datasets to ensure divider detection is robust. 
 
+- Once 03 is sussed, test downstream effects to surfacing both the time savings and the quality of the end outputs. 
+
+- Masking fully black pixels. Compression could mess with this, so look for that. 
+
 - Test the ISO interface
 
-- Makes sure it only looks for the exact output folder it created in 00 and anything names differently will be ignored and naything names the same will be used which means that all files inside the output folder excepting the final report md and pdf---which is timestamped---will be overwritten.
+- Can you set up where you get through 00 - 03 and then batch 04 and 05? 
 
 ---------------------------------------------------------------------------------------------------------------------
 Usability concerns (flow will work but could be better)
 ---------------------------------------------------------------------------------------------------------------------
+
+- If you close the window in 01, it won't reappear if you need it still. 
+
+- I noticed during 03, that when I select dividers, it accepts whatever I do, but perhaps I made a mistake. the work around is to put too many dividers on the board and it will fuss and ask you to try again. However, if a user doesn't know the work around but doesn't like their placement, they have no option to recoup without running the whole script again. Let's look for places in the script where the user can make overrides by image or graph interaction and ensure that we double-check to make sure they are pleased with what they chose. 
 
 - 04 should print progress after each specimen, something like “writing volume 3/8…” and “surfacing mesh 3/8…”, because file-size watching should not be the only proof that the script is alive.
 
@@ -23,6 +31,12 @@ Usability concerns (flow will work but could be better)
 - Make sure that wherever this is (or should be) a runtime error that this is changed to an interactive moment with the user so they don't necessarily have to run the entire script.
 
 - Go through all scripts and replace all obscure labels with more descriptive labels. 
+
+- I wonder if we could automated saving .png outputs of some of the images and figures in 01 and 03. I'm doing a lot of screenshotting and I can imagine someone else wanting to do the same. It would certainly make my life easier. 
+
+- During 03, if you choose 'm' and it will show you its suggestions. If you like the columns and only adjust the rows, it will retain the column dividers. However, if you make a partial adjustment to the column dividers, it will overwrite everything for columns. 
+
+- Add dataset names to all interface graphics!
 
 ---------------------------------------------------------------------------------------------------------------------
 Update / create accessory scripts (not necessary for workflow but easier to adjust prior to updating documentation)

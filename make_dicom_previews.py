@@ -2,7 +2,7 @@
 make_dicom_previews.py
 
 To run script: 
-    python make_dicom_previews.py --scanpath /path/to/scan
+    python make_dicom_previews.py --scanpath /path/to/scan1 /path/to/scan2 /path/to/scan3
 
 Purpose
 -------
@@ -140,7 +140,7 @@ def make_preview_images(scanpath, output_folder_name="Slices_preview", quality=9
 
     dicom_files = sorted(dicom_files, key=get_sort_key)
 
-    output_path = scanpath / output_folder_name
+    output_path = scanpath.parent / output_folder_name
 
     if output_path.exists():
         if force:
@@ -194,8 +194,9 @@ def main():
 
     parser.add_argument(
         "--scanpath",
+        nargs="+",
         required=True,
-        help="Path to the folder containing .dcm/.dicom files.",
+        help="One or more paths to folders containing .dcm/.dicom files.",
     )
 
     parser.add_argument(
@@ -213,11 +214,12 @@ def main():
 
     args = parser.parse_args()
 
-    make_preview_images(
-        scanpath=args.scanpath,
-        quality=args.quality,
-        force=args.force,
-    )
+    for scanpath in args.scanpath:
+        make_preview_images(
+            scanpath=scanpath,
+            quality=args.quality,
+            force=args.force,
+        )    
 
 
 if __name__ == "__main__":

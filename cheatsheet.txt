@@ -100,6 +100,13 @@ ISO: 15000
 
 -------------------------------------------------------------------------------------------------------------------------
 
+python make_dicom_previews.py --scanpath I:\AISOS_Users\AISOS_AMAAZE_mCT_workspace\datasets\LamaLuther_box1_5_0728\Slices I:\AISOS_Users\AISOS_AMAAZE_mCT_workspace\datasets\LamaLuther_box1_6_0728\Slices
+
+
+I:\AISOS_Users\AISOS_AMAAZE_mCT_workspace\AMAAZE_mCT_workflow\test_data_bonefrags_CT_2
+I:\AISOS_Users\AISOS_AMAAZE_mCT_workspace\datasets\LamaLuther_box1_1_0905
+I:\AISOS_Users\AISOS_AMAAZE_mCT_workspace\datasets\LamaLuther_box1_2_0728
+I:\AISOS_Users\AISOS_AMAAZE_mCT_workspace\datasets\LamaLuther_box1_3_0728
 
 
 

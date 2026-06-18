@@ -440,203 +440,214 @@ for i in range(len(I)):
         "angle_step": 0.25,
         "best_score": float(rotation_scores.max()),
     })
-
-
+    
 # ============================================================
-# Per-tier divider detection (Our new grid-based approach)
+# Per-tier divider detection
 # ============================================================
 
-divider_proposals = [] # Making a bin for our divider proposals (saving it a spot to fill)
+"""
+Divider detection operates on the mean projection of each active tier.
 
+A local stability image is computed to emphasize specimen and divider
+boundaries while suppressing much of the internal texture. The stability
+image is thresholded and converted into row- and column-wise occupancy
+profiles.
 
-# For each of the normalized tier images we expect a certain number of rows and cols (based on the CSV)
+Rows and columns with high occupancy are treated as candidate divider
+edges. Neighboring candidate indices are collapsed into edge bands,
+paired according to plausible divider widths, and converted into divider
+centerlines.
+
+Diagnostic plots are generated to visualize:
+1. The stability image.
+2. Candidate divider edges.
+3. Paired divider edges.
+4. Final divider centerlines.
+
+The resulting divider network is used to define specimen extraction
+regions for downstream processing.
+"""
+
+divider_proposals = []
+
 for i, normalized_image in enumerate(normalized_tier_images):
+
+    """
+    NOTE(dev): window_size=3, percentile_low=2,
+    and percentile_high=98 heuristic parameters.
+
+    Smaller windows produce sharper local edge responses.
+    Larger windows broaden the stability halos and may merge
+    nearby features.
+
+    Values below the 2nd percentile and above the 98th percentile
+    are clipped before normalization to reduce the influence of
+    extreme intensity values.
+
+    Current value selected empirically because it produced
+    stable divider detection on test datasets while preserving
+    boundary localization.
+
+    Review across additional datasets.
+    """
+    stability_window = 3
+
+    stability_image = local_stability_image(
+        normalized_image,
+        window_size=stability_window,
+        percentile_low=2,
+        percentile_high=98
+    )
+
+    """
+    NOTE(dev): dark-mask percentile cutoff = 20 is a heuristic parameter.
+
+    Occupancy responses below this value are discarded prior to
+    candidate divider selection.
+    
+    Occupancy is the number of pixels within a row or column that
+    are classified as stability features after thresholding the
+    local stability image.
+
+    Lower values increase sensitivity but may introduce weak or
+    spurious divider candidates. Higher values suppress weak
+    responses and favor stronger divider signals.
+
+    Current value selected empirically during divider-detection
+    development. Review across additional datasets.
+
+    """
+
+    cutoff = np.percentile(stability_image, 20)
+    dark_mask = stability_image < cutoff
+
+    row_occupancy_for_cutoff = dark_mask.mean(axis=1)
+    col_occupancy_for_cutoff = dark_mask.mean(axis=0)
+
+    row_min_fraction = 0.45
+    col_min_fraction = 0.45
+
+    row_candidates_for_cutoff = np.where(row_occupancy_for_cutoff >= row_min_fraction)[0]
+    col_candidates_for_cutoff = np.where(col_occupancy_for_cutoff >= col_min_fraction)[0]
+
+    large_gap_cutoff = estimate_large_gap_cutoff_from_candidates(
+        row_candidates_for_cutoff,
+        col_candidates_for_cutoff
+    )
+
+    """
+    NOTE(dev): occupancy_threshold=0.45, min_pair_gap=20,
+    and max_pair_gap=20 are heuristic parameters.
+
+    occupancy_threshold defines the minimum fraction of pixels
+    classified as stability features required for a row or column
+    to become a candidate divider edge.
+
+    min_pair_gap and max_pair_gap define the allowable separation
+    between candidate edge bands when pairing opposite sides of a
+    divider.
+
+    Lower occupancy thresholds increase sensitivity but may
+    introduce false positives. Wider pairing ranges permit more
+    divider-width variation but may increase incorrect pairings.
+
+    Current values were selected empirically during development.
+    Review across additional datasets.
+    """
 
     tier_id = int(active_tier_ids[i])
 
     expected_n_row_dividers = layout_by_tier[tier_id]["n_rows"] - 1
     expected_n_col_dividers = layout_by_tier[tier_id]["n_cols"] - 1
 
-    image_height, image_width = normalized_image.shape # Each tier has a height and width that we can use to define the "box edges"
-
-    local_homogeneity_image, dark_mask, cutoff, window_size, percentile_low, percentile_high, mask_percentile = compute_local_homogeneity_image(
-        normalized_image
-    )
-
-    row_evidence = compute_axis_divider_evidence(
+    row_centers, row_pairs, row_occupancy, row_candidates, row_candidate_bands, row_band_centers = paired_edge_centerlines(
         dark_mask,
-        axis_label="row"
+        axis_label="row",
+        min_fraction=row_min_fraction,
+        expected_n_dividers=expected_n_row_dividers,
+        large_gap_cutoff=large_gap_cutoff,
     )
 
-    col_evidence = compute_axis_divider_evidence(
+    col_centers, col_pairs, col_occupancy, col_candidates, col_candidate_bands, col_band_centers = paired_edge_centerlines(
         dark_mask,
-        axis_label="col"
+        axis_label="col",
+        min_fraction=col_min_fraction,
+        expected_n_dividers=expected_n_col_dividers,
+        large_gap_cutoff=large_gap_cutoff,
     )
 
-    row_score_changes = compute_divider_score_changes(
-        row_evidence["divider_score"]
-    )
+#    row_centers, row_pairs, row_occupancy, row_candidates, row_candidate_bands, row_band_centers = paired_edge_centerlines(
+#        dark_mask,
+#        axis_label="row",
+#        max_pair_gap=20
+#    )
+#
+#    col_centers, col_pairs, col_occupancy, col_candidates, col_candidate_bands, col_band_centers = paired_edge_centerlines(
+#        dark_mask,
+#        axis_label="col",
+#        max_pair_gap=20
+#    )
 
-    col_score_changes = compute_divider_score_changes(
-        col_evidence["divider_score"]
-    )
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
-    row_candidate_indices = np.where(
-        row_score_changes > 0
-    )[0]
-
-    col_candidate_indices = np.where(
-        col_score_changes > 0
-    )[0]
-
-    row_gap_result = estimate_big_gap_threshold(
-        row_candidate_indices
-    )
-
-    col_gap_result = estimate_big_gap_threshold(
-        col_candidate_indices
-    )
-
-    row_neighborhoods = build_index_neighborhoods(
-        row_candidate_indices,
-        row_gap_result["gap_threshold"]
-    )
-
-    col_neighborhoods = build_index_neighborhoods(
-        col_candidate_indices,
-        col_gap_result["gap_threshold"]
-    )
-
-    classified_row_neighborhoods = classify_neighborhoods(
-        row_neighborhoods,
-        row_evidence["occupancy"],
-        row_evidence["continuity"],
-        row_evidence["fragmentation"],
-        row_evidence["divider_score"],
-        row_score_changes,
-        image_height,
-    )
-
-    classified_col_neighborhoods = classify_neighborhoods(
-        col_neighborhoods,
-        col_evidence["occupancy"],
-        col_evidence["continuity"],
-        col_evidence["fragmentation"],
-        col_evidence["divider_score"],
-        col_score_changes,
-        image_width,
-    )
-
-    grid_geometry = measure_candidate_grid_geometry(
-        classified_row_neighborhoods,
-        classified_col_neighborhoods,
-        image_height,
-        image_width,
-    )
-
-    candidate_grid = score_candidate_grid_geometry(
-        grid_geometry
-    )
-
-    count_validation = validate_grid_counts_from_csv(
-        candidate_grid,
-        expected_n_rows=layout_by_tier[tier_id]["n_rows"],
-        expected_n_cols=layout_by_tier[tier_id]["n_cols"],
-    )
-
-    # Temporary diagnostic print block
-    print()
-    print(f"Tier {tier_id} divider-detection diagnostics")
-    print(f"Expected rows: {layout_by_tier[tier_id]['n_rows']}")
-    print(f"Expected cols: {layout_by_tier[tier_id]['n_cols']}")
-    print(f"Expected row dividers: {expected_n_row_dividers}")
-    print(f"Expected col dividers: {expected_n_col_dividers}")
-    print(f"Homogeneity cutoff: {cutoff:.4f}")
-    print(f"Row neighborhoods: {len(classified_row_neighborhoods)}")
-    print(f"Col neighborhoods: {len(classified_col_neighborhoods)}")
-    print(f"Row dividers proposed: {len(candidate_grid['row_dividers'])}")
-    print(f"Col dividers proposed: {len(candidate_grid['col_dividers'])}")
-    print(f"Row divider widths: {candidate_grid['row_divider_widths']}")
-    print(f"Col divider widths: {candidate_grid['col_divider_widths']}")
-    print(f"Row cell heights: {candidate_grid['row_cell_heights']}")
-    print(f"Col cell widths: {candidate_grid['col_cell_widths']}")
-    print(f"Geometry score: {candidate_grid['geometry_score']} / {candidate_grid['max_geometry_score']}")
-    print(count_validation["row_divider_action"])
-    print(count_validation["col_divider_action"])
-    print()
-
-    fig, axs = plt.subplots(2, 3, figsize=(16, 9))
-
-    axs[0, 0].imshow(normalized_image, cmap="gray")
-    axs[0, 0].set_title(f"Tier {tier_id}: normalized image")
+    # 1. Stability image
+    axs[0, 0].imshow(stability_image, cmap="gray")
+    axs[0, 0].set_title(f"Tier {i+1}: stability image")
     axs[0, 0].axis("off")
 
-    axs[0, 1].imshow(local_homogeneity_image, cmap="gray")
-    axs[0, 1].set_title("Local homogeneity image")
+    # 2. Candidate divider edges
+    axs[0, 1].imshow(normalized_image, cmap="gray")
+
+    for r in row_candidates:
+        axs[0, 1].axhline(r, color="magenta", linestyle=":", linewidth=1)
+
+    for c in col_candidates:
+        axs[0, 1].axvline(c, color="magenta", linestyle=":", linewidth=1)
+
+    axs[0, 1].set_title("Candidate divider edges")
     axs[0, 1].axis("off")
 
-    axs[0, 2].imshow(dark_mask, cmap="gray")
-    axs[0, 2].set_title("Dark/stable mask")
-    axs[0, 2].axis("off")
+    # 3. Paired divider edges
+    axs[1, 0].imshow(normalized_image, cmap="gray")
 
-    axs[1, 0].plot(row_evidence["divider_score"])
-    axs[1, 0].set_title("Row divider score")
-    axs[1, 0].set_xlabel("row index")
-    axs[1, 0].set_ylabel("score")
+    for r1, r2 in row_pairs:
+        axs[1, 0].axhline(r1, color="red", linestyle="--")
+        axs[1, 0].axhline(r2, color="green", linestyle="--")
 
-    for n in classified_row_neighborhoods:
-        if n["classification"] == "divider_like":
-            axs[1, 0].axvspan(
-                n["start_index"],
-                n["end_index"],
-                alpha=0.25
-            )
+    for c1, c2 in col_pairs:
+        axs[1, 0].axvline(c1, color="red", linestyle="--")
+        axs[1, 0].axvline(c2, color="green", linestyle="--")
 
-    axs[1, 1].plot(col_evidence["divider_score"])
-    axs[1, 1].set_title("Column divider score")
-    axs[1, 1].set_xlabel("column index")
-    axs[1, 1].set_ylabel("score")
+    axs[1, 0].set_title("Paired divider edges")
+    axs[1, 0].axis("off")
 
-    for n in classified_col_neighborhoods:
-        if n["classification"] == "divider_like":
-            axs[1, 1].axvspan(
-                n["start_index"],
-                n["end_index"],
-                alpha=0.25
-            )
+    # 4. Divider centerlines
+    axs[1, 1].imshow(normalized_image, cmap="gray")
 
-    axs[1, 2].imshow(normalized_image, cmap="gray")
-    axs[1, 2].set_title("Suggested grid")
+    for r1, r2 in row_pairs:
+        axs[1, 1].axhline(r1, color="red", linestyle="--")
+        axs[1, 1].axhline(r2, color="green", linestyle="--")
 
-    for divider in candidate_grid["row_dividers"]:
-        axs[1, 2].axhspan(
-            divider["start_index"],
-            divider["end_index"],
-            alpha=0.25
-        )
+    for r in row_centers:
+        axs[1, 1].axhline(r, color="cyan", linewidth=2)
 
-    for divider in candidate_grid["col_dividers"]:
-        axs[1, 2].axvspan(
-            divider["start_index"],
-            divider["end_index"],
-            alpha=0.25
-        )
+    for c1, c2 in col_pairs:
+        axs[1, 1].axvline(c1, color="red", linestyle="--")
+        axs[1, 1].axvline(c2, color="green", linestyle="--")
 
-    axs[1, 2].axis("off")
+    for c in col_centers:
+        axs[1, 1].axvline(c, color="cyan", linewidth=2)
 
-    fig.suptitle(
-        f"Tier {tier_id}: automated divider proposal\n"
-        f"Geometry score: {candidate_grid['geometry_score']} / "
-        f"{candidate_grid['max_geometry_score']} | "
-        f"Counts match: {count_validation['counts_match']}"
-    )
+    axs[1, 1].set_title("Divider centerlines")
+    axs[1, 1].axis("off")
 
+    fig.suptitle(f"Tier {i+1}: automated divider proposal", fontsize=14)
     plt.tight_layout()
     plt.show(block=False)
 
     print()
     print("An automated divider proposal window is open.")
-    print("Review the homogeneity image, mask, score plots, and suggested grid.")
+    print("Review the proposed divider locations.")
     print("Close the divider proposal window when you are done reviewing it.")
     print()
 
@@ -649,27 +660,11 @@ for i, normalized_image in enumerate(normalized_tier_images):
         "or type 'm' for manual override: "
     )
 
-    if review_choice == "m":
-        final_rows, final_cols = review_dividers(...)
-    else:
-        final_rows = proposed_rows
-        final_cols = proposed_cols
-
     divider_proposals.append({
-        "tier_id": int(tier_id),
-        "proposed_rows": np.array([
-            d["center_index"]
-            for d in candidate_grid["row_dividers"]
-        ]).astype(int),
-        "proposed_cols": np.array([
-            d["center_index"]
-            for d in candidate_grid["col_dividers"]
-        ]).astype(int),
-        "classified_row_neighborhoods": classified_row_neighborhoods,
-        "classified_col_neighborhoods": classified_col_neighborhoods,
-        "candidate_grid": candidate_grid,
-        "count_validation": count_validation,
-        "review_choice": review_choice.strip().lower(),
+        "tier_id": int(active_tier_ids[i]),
+        "proposed_rows": np.array(row_centers).astype(int),
+        "proposed_cols": np.array(col_centers).astype(int),
+        "review_choice": review_choice.strip().lower()
     })
 
 # ============================================================

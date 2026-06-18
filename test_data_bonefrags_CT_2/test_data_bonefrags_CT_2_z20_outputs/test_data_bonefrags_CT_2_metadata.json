@@ -122,29 +122,29 @@
             50
           ],
           "proposed_col_dividers": [
-            70,
-            144
+            56,
+            142
           ],
           "final_row_dividers": [
             50
           ],
           "final_col_dividers": [
-            70,
-            144
+            56,
+            142
           ],
           "divider_method": "automatic_accepted"
         },
         {
           "tier_id": 2,
           "proposed_row_dividers": [
-            44
+            61
           ],
           "proposed_col_dividers": [
             76,
             150
           ],
           "final_row_dividers": [
-            44
+            61
           ],
           "final_col_dividers": [
             76,
@@ -154,6 +154,6 @@
         }
       ]
     },
-    "runtime_seconds": 104.50174570002127
+    "runtime_seconds": 609.2136051999987
   }
 }
