@@ -16,6 +16,12 @@ High priority fixes to the flow (flow won't work)
 
 - Can you set up where you get through 00 - 03 and then batch 04 and 05? 
 
+- reintorduce bach-and-forth behavior of the "m"
+
+- replace stability image lable with local_homogeneity_image
+
+- Make sure that you output all interactive images automatically so you have data when others are running things. Add the additional print statements that are useful to the metadata. You're almost there! Thresholding, surfacing, batching. You can be really proud of yourself.  
+
 ---------------------------------------------------------------------------------------------------------------------
 Usability concerns (flow will work but could be better)
 ---------------------------------------------------------------------------------------------------------------------

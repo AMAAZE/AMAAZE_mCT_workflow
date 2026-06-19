@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-utils.py
+utils_backup.py
 
 Original processing logic: RileyWilde
 Refactoring and workflow design: Katrina E. Yezzi-Woodley
@@ -1222,6 +1222,7 @@ def select_tier_boundaries_by_edge_and_score(
 
 
 
+
 ###########################################################
 
 def select_tier_boundaries_by_edge_and_prominence(
@@ -1339,830 +1340,592 @@ def estimate_grid_rotation_by_coherence(im, angle_min=-5, angle_max=5, angle_ste
     return best_angle, angles, scores
 
 
-
-# ============================================================
-# FUNCTIONS USED BY 03_segment.py to segment individual tiers
-# ============================================================
-"""
-Algorithmic Concept:
-
-A scoring function that evaluates an entire proposed divider layout rather than individual neighborhoods. 
-The image edges would be included automatically as terminal dividers, compartment widths would be computed automatically, 
-and rogue neighborhoods would get penalized because they distort the overall grid geometry rather than because they happen to be near an edge or happen to be singletons. 
-
-The algorithm should probably have two scoring layers. First: generate candidate grids that satisfy the structural rule. Second: score those candidate grids against specimen evidence. Dividers should align with divider-like stable bands and avoid running through specimen-heavy regions. Cells do not have to be occupied, but occupied regions should mostly fall inside cells rather than across divider lines.
-
-Algorithmic Constraints:
-- Conceptually, the edges of the image are equivalent to the sides of the box. 
-- Conceptually, when we use the word gap, we are talking about spaces on either side of dividers. 
-- Conceptually, when we talk about neighborhoods, we are referring to groups of indices that could consitute dividers.
-- Edge pairs refers to the subdivision of the dividers so that we mark each of the dividers edges.
-- Divider edges should also be sensitive to dramatic changes in occupancies. We woud expect them to be generally (though not always) more consistent as you traverse a divider.
-- A valid divider creates a partition that spans the full extent of the box in that direction.
-- A valid divider is more parallel than not to the image/box edge. (We need some error because of shear and bending of dividers)
-- If a row divider runs completely across the box, then every cell in that row shares the same top and bottom boundaries. That means all cells in a given row have the same height.
-- Likewise, if a column divider runs completely from top to bottom, then every cell in that column shares the same left and right boundaries. All cells in that column have the same width.
-
-"""
-
-
-def compute_local_homogeneity_image(
-    normalized_image, 
-    window_size=3, 
-    percentile_low=2, 
-    percentile_high=98,
-    mask_percentile=20
-):
-    
+def local_stability_image(image, window_size=5, percentile_low=2, percentile_high=98):
     """
-    Compute the matrix of values used to display the homogeneity image.
+    Create a local-stability image.
 
-    The input is a rotation-normalized tier image. For each pixel location,
-    the function looks at a small local window around that pixel, computes
-    the standard deviation of the values in that window, and converts that
-    local variation into a homogeneity value.
-
-    The returned array has the same shape as the input image. Each output
-    cell corresponds to the same row/column location as the input pixel and
-    stores the homogeneity value calculated from that pixel's local
-    neighborhood.
-
-    Low local variation produces high homogeneity. High local variation
-    produces low homogeneity. The values are percentile-stretched and clipped
-    so the resulting matrix can be visualized clearly with imshow().
-
-    Note: It also returns the dark mask
-
+    Low local standard deviation = high stability.
+    Percentile stretch improves visual contrast.
     """
 
-    normalized_image = normalized_image.astype(float)
+    image = image.astype(float)
 
     local_std = ndimage.generic_filter(
-        normalized_image,
+        image,
         np.std,
         size=window_size
     )
 
-    local_homogeneity_image = 1.0 / (local_std + 1)
+    stability = 1.0 / (local_std + 1)
 
-    lo = np.percentile(local_homogeneity_image, percentile_low)
-    hi = np.percentile(local_homogeneity_image, percentile_high)
+    lo = np.percentile(stability, percentile_low)
+    hi = np.percentile(stability, percentile_high)
 
     if hi > lo:
-        local_homogeneity_image = (local_homogeneity_image - lo) / (hi - lo)
-        local_homogeneity_image = np.clip(local_homogeneity_image, 0, 1)
+        stability = (stability - lo) / (hi - lo)
+        stability = np.clip(stability, 0, 1)
 
-    cutoff = np.percentile(local_homogeneity_image, mask_percentile)
-    dark_mask = local_homogeneity_image < cutoff
+    return stability
 
-    return(
-        local_homogeneity_image,
-        dark_mask,
-        cutoff,
-        window_size,  
-        percentile_low, 
-        percentile_high,
-        mask_percentile
+def estimate_large_gap_cutoff_from_candidates(row_candidates, col_candidates):
+    """
+    Estimate the gap cutoff that separates within-divider edge spacing
+    from between-neighborhood spacing using row and column candidates together.
+    """
+
+    all_gaps = []
+
+    row_candidates = np.array(row_candidates).astype(int)
+    col_candidates = np.array(col_candidates).astype(int)
+
+    if len(row_candidates) > 1:
+        all_gaps.extend(np.diff(np.sort(row_candidates)).tolist())
+
+    if len(col_candidates) > 1:
+        all_gaps.extend(np.diff(np.sort(col_candidates)).tolist())
+
+    all_gaps = np.array([g for g in all_gaps if g > 0]).astype(float)
+
+    print()
+    print("POOLED GAP DIAGNOSTICS")
+    print("row_candidates:")
+    print(row_candidates)
+    print("col_candidates:")
+    print(col_candidates)
+    print("pooled gaps:")
+    print(all_gaps)
+
+    if len(all_gaps) == 0:
+        return None
+
+    if len(all_gaps) == 1:
+        return all_gaps[0] + 1
+
+    sorted_gaps = np.sort(all_gaps)
+    gap_jumps = np.diff(sorted_gaps)
+
+    if len(gap_jumps) == 0:
+        return sorted_gaps[-1] + 1
+
+    jump_index = int(np.argmax(gap_jumps))
+
+    small_gap_max = sorted_gaps[jump_index]
+    large_gap_min = sorted_gaps[jump_index + 1]
+
+    large_gap_cutoff = (small_gap_max + large_gap_min) / 2
+
+    print("sorted pooled gaps:")
+    print(sorted_gaps)
+    print("gap jumps:")
+    print(gap_jumps)
+    print("small_gap_max:")
+    print(small_gap_max)
+    print("large_gap_min:")
+    print(large_gap_min)
+    print("large_gap_cutoff:")
+    print(large_gap_cutoff)
+
+    return large_gap_cutoff
+
+def score_candidate_neighborhood(neighborhood, max_value=None):
+    """
+    Score whether a candidate neighborhood looks like a real divider.
+
+    Higher score = stronger internal-divider evidence.
+    Singleton/isolated neighborhoods and border-adjacent neighborhoods
+    score lower.
+    """
+
+    neighborhood = np.array(neighborhood).astype(int)
+
+    if len(neighborhood) == 0:
+        return -999
+
+    edge_sets, edge_centers = split_neighborhood_into_edge_sets(
+        neighborhood,
+        max_value=max_value
     )
 
-def compute_axis_divider_evidence(dark_mask, axis_label):
-    """
-    Compute divider evidence for every row or column of a dark/stable mask.
+    score = 0
 
-    Occupancy measures how much of the row/column is dark.
-    Continuity measures whether those dark pixels form long coherent runs by identifying the longest run. 
-    Fragmentation measures how broken up the dark pixels are by counting the number of transitions in the run.
-    Then each line is given a divider score which is the likelihood that a row/col of pixels belongs to a divider.
+    # Strongest evidence: the neighborhood can produce two edge sets.
+    if len(edge_centers) >= 2:
+        score += 10
 
-    A strong divider should have high occupancy, high continuity,
-    and low fragmentation.
-    """
+        edge_width = abs(float(edge_centers[1]) - float(edge_centers[0]))
 
-    if axis_label == "row":
-        lines = dark_mask
-    elif axis_label == "col":
-        lines = dark_mask.T
+        # Very tiny "pairs" are often just noise.
+        if edge_width >= 2:
+            score += 5
+
+    # More than one candidate is better than singleton noise.
+    if len(neighborhood) > 1:
+        score += len(neighborhood)
     else:
-        raise ValueError("axis_label must be 'row' or 'col'.")
+        score -= 10
 
-    occupancies = []
-    continuities = []
-    fragmentations = []
-    divider_scores = []
+    # Penalize neighborhoods near the image border.
+    if max_value is not None:
+        border_margin = int(max_value * 0.05)
 
-    for line in lines:
-        line = np.asarray(line).astype(bool)
+        if neighborhood.min() <= border_margin:
+            score -= 10
 
-        occupancy = line.mean()
+        if neighborhood.max() >= max_value - border_margin:
+            score -= 10
 
-        transitions = np.sum(line[1:] != line[:-1])
+    return score
 
-        if np.any(line):
-            padded = np.concatenate(([False], line, [False]))
-            starts = np.where((padded[1:] == True) & (padded[:-1] == False))[0]
-            ends = np.where((padded[1:] == False) & (padded[:-1] == True))[0]
-            run_lengths = ends - starts
-            longest_run = run_lengths.max()
-        else:
-            longest_run = 0
-
-        continuity = longest_run / len(line)
-
-        fragmentation = transitions / max(1, len(line) - 1)
-
-        score = occupancy * continuity * (1 - fragmentation)
-
-        occupancies.append(occupancy)
-        continuities.append(continuity)
-        fragmentations.append(fragmentation)
-        divider_scores.append(score)
-
-    return {
-        "occupancy": np.array(occupancies),
-        "continuity": np.array(continuities),
-        "fragmentation": np.array(fragmentations),
-        "divider_score": np.array(divider_scores),
-    }
-
-def compute_divider_score_changes(divider_score):
+def partition_candidate_neighborhoods(
+    candidate_idxs,
+    expected_n_dividers=None,
+    large_gap_cutoff=None,
+    max_value=None,
+):
     """
-    Measure how rapidly divider evidence changes from one
-    neighboring line to the next.
+    Partition candidate divider-edge indices into natural candidate neighborhoods.
 
-    Large values indicate possible neighborhood boundaries.
+    First, split candidates at large natural gaps. These neighborhoods are
+    candidate divider-line regions, not the gaps themselves.
+
+    If more neighborhoods are found than expected dividers, trim likely
+    box-edge neighborhoods from the ends, favoring interior neighborhoods
+    that contain valid paired edge evidence.
     """
 
-    divider_score = np.asarray(divider_score).astype(float)
+    candidate_idxs = np.array(candidate_idxs).astype(int)
 
-    return np.abs(np.diff(divider_score))
-
-
-def estimate_big_gap_threshold(indices):
-    """
-    Estimate the distance threshold separating small within-neighborhood
-    gaps from large between-neighborhood gaps.
-
-    Input:
-        indices = ordered row or column locations
-
-    Output:
-        threshold separating small gaps from big gaps
-    """
-
-    indices = np.asarray(indices).astype(int)
-    indices = np.sort(indices)
-
-    if len(indices) < 2:
-        return {
-            "distances": np.array([], dtype=int),
-            "gap_threshold": None,
-            "big_gap_found": False,
-        }
-
-    distances = np.diff(indices)
-
-    positive_distances = distances[distances > 0]
-
-    if len(positive_distances) == 0:
-        return {
-            "distances": distances,
-            "gap_threshold": None,
-            "big_gap_found": False,
-        }
-
-    if len(positive_distances) == 1:
-        return {
-            "distances": distances,
-            "gap_threshold": positive_distances[0],
-            "big_gap_found": True,
-        }
-
-    sorted_distances = np.sort(positive_distances)
-    distance_jumps = np.diff(sorted_distances)
-
-    largest_jump_index = np.argmax(distance_jumps)
-
-    small_gap_max = sorted_distances[largest_jump_index]
-    big_gap_min = sorted_distances[largest_jump_index + 1]
-
-    gap_threshold = (small_gap_max + big_gap_min) / 2
-
-    return {
-        "distances": distances,
-        "sorted_distances": sorted_distances,
-        "distance_jumps": distance_jumps,
-        "small_gap_max": int(small_gap_max),
-        "big_gap_min": int(big_gap_min),
-        "gap_threshold": float(gap_threshold),
-        "big_gap_found": True,
-    }
-
-
-def build_index_neighborhoods(indices, gap_threshold):
-    """
-    Build spatial neighborhoods from ordered row or column indices.
-
-    A new neighborhood starts whenever the distance between neighboring
-    indices is larger than the big-gap threshold.
-    """
-
-    indices = np.asarray(indices).astype(int)
-    indices = np.sort(indices)
-
-    if len(indices) == 0:
+    if len(candidate_idxs) == 0:
         return []
 
-    if gap_threshold is None:
-        return [{
-            "indices": indices.astype(int),
-            "start_index": int(indices[0]),
-            "end_index": int(indices[-1]),
-            "center_index": int(round((indices[0] + indices[-1]) / 2)),
-            "width": int(indices[-1] - indices[0] + 1),
-        }]
+    candidate_idxs = np.sort(candidate_idxs)
+
+    if len(candidate_idxs) == 1:
+        return [candidate_idxs]
+
+    gaps = np.diff(candidate_idxs)
+
+    print()
+    print("partition diagnostics")
+    print("candidate_idxs:")
+    print(candidate_idxs)
+    print("gaps:")
+    print(gaps)
+
+    if expected_n_dividers is None:
+        return [candidate_idxs]
+
+    expected_n_dividers = int(expected_n_dividers)
+
+    if expected_n_dividers <= 0:
+        return []
+
+    if len(gaps) == 0:
+        return [candidate_idxs]
+
+    positive_gaps = gaps[gaps > 0]
+
+    if len(positive_gaps) == 0:
+        return [candidate_idxs]
+
+    #median_gap = np.median(positive_gaps)
+    #large_gap_cutoff = max(3, median_gap * 3)
+
+    if large_gap_cutoff is None:
+        median_gap = np.median(positive_gaps)
+        large_gap_cutoff = max(3, median_gap * 3)
+
+    split_gap_positions = np.where(gaps >= large_gap_cutoff)[0]
+
+    print("large_gap_cutoff:")
+    print(large_gap_cutoff)
+
+    print("split_gap_positions:")
+    print(split_gap_positions)
+
+    if len(split_gap_positions) > 0:
+        print("split_gap_sizes:")
+        print(gaps[split_gap_positions])
 
     neighborhoods = []
-    current_indices = [int(indices[0])]
+    start = 0
 
-    for i in range(1, len(indices)):
-        distance_from_previous = indices[i] - indices[i - 1]
+    for gap_position in split_gap_positions:
+        stop = gap_position + 1
+        neighborhoods.append(candidate_idxs[start:stop])
+        start = stop
 
-        if distance_from_previous > gap_threshold:
-            neighborhood_indices = np.array(current_indices).astype(int)
+    neighborhoods.append(candidate_idxs[start:])
 
-            neighborhoods.append({
-                "indices": neighborhood_indices,
-                "start_index": int(neighborhood_indices[0]),
-                "end_index": int(neighborhood_indices[-1]),
-                "center_index": int(round(
-                    (neighborhood_indices[0] + neighborhood_indices[-1]) / 2
-                )),
-                "width": int(neighborhood_indices[-1] - neighborhood_indices[0] + 1),
-            })
+    print("natural neighborhoods before adjudication:")
 
-            current_indices = [int(indices[i])]
+    for i, neighborhood in enumerate(neighborhoods, start=1):
+        print(f"  neighborhood {i}: {neighborhood}")
 
-        else:
-            current_indices.append(int(indices[i]))
+    if len(neighborhoods) > expected_n_dividers:
 
-    neighborhood_indices = np.array(current_indices).astype(int)
+        neighborhood_scores = [
+            score_candidate_neighborhood(
+                neighborhood,
+                max_value=max_value
+            )
+            for neighborhood in neighborhoods
+        ]
 
-    neighborhoods.append({
-        "indices": neighborhood_indices,
-        "start_index": int(neighborhood_indices[0]),
-        "end_index": int(neighborhood_indices[-1]),
-        "center_index": int(round(
-            (neighborhood_indices[0] + neighborhood_indices[-1]) / 2
-        )),
-        "width": int(neighborhood_indices[-1] - neighborhood_indices[0] + 1),
-    })
+        print("neighborhood adjudication scores:")
+        for i, (neighborhood, score) in enumerate(
+            zip(neighborhoods, neighborhood_scores),
+            start=1
+        ):
+            print(f"  neighborhood {i}: score={score}, values={neighborhood}")
+
+        keep_order = np.argsort(neighborhood_scores)[-expected_n_dividers:]
+        keep_order = np.sort(keep_order)
+
+        neighborhoods = [
+            neighborhoods[idx]
+            for idx in keep_order
+        ]
+
+    print("final neighborhoods after adjudication:")
+
+    for i, neighborhood in enumerate(neighborhoods, start=1):
+        print(f"  neighborhood {i}: {neighborhood}")
 
     return neighborhoods
 
-def classify_neighborhoods(
-    neighborhoods,
-    occupancy,
-    continuity,
-    fragmentation,
-    divider_score,
-    score_changes,
-    n_lines,
-):
-    classified_neighborhoods = []
+def trim_weak_end_from_neighborhood(neighborhood, max_value=None):
+    neighborhood = np.array(neighborhood).astype(int)
 
-    global_mean_divider_score = np.mean(divider_score)
+    if len(neighborhood) < 4:
+        return neighborhood
 
-    for neighborhood in neighborhoods:
-        start = neighborhood["start_index"]
-        end = neighborhood["end_index"]
-        end_slice = end + 1
+    gaps = np.diff(neighborhood)
 
-        neighborhood_divider_score = divider_score[start:end_slice]
+    if len(gaps) == 0:
+        return neighborhood
 
-        left_transition_strength = (
-            score_changes[start - 1]
-            if start > 0
-            else None
-        )
+    largest_gap_index = int(np.argmax(gaps))
+    largest_gap = gaps[largest_gap_index]
 
-        right_transition_strength = (
-            score_changes[end]
-            if end < n_lines - 1
-            else None
-        )
+    other_gaps = np.delete(gaps, largest_gap_index)
 
-        touches_left_edge = start == 0
-        touches_right_edge = end == n_lines - 1
+    if len(other_gaps) == 0:
+        return neighborhood
 
-        edge_confirmed = (
-            touches_left_edge
-            or touches_right_edge
-            or left_transition_strength is not None
-            or right_transition_strength is not None
-        )
+    if largest_gap <= np.max(other_gaps):
+        return neighborhood
 
-        mean_divider_score = np.mean(neighborhood_divider_score)
-        peak_divider_score = np.max(neighborhood_divider_score)
+    left_side = neighborhood[:largest_gap_index + 1]
+    right_side = neighborhood[largest_gap_index + 1:]
 
-        if mean_divider_score > global_mean_divider_score:
-            neighborhood_type = "divider_like"
+    left_is_singleton = len(left_side) == 1
+    right_is_singleton = len(right_side) == 1
+
+    left_is_border = False
+    right_is_border = False
+
+    if max_value is not None:
+        border_margin = int(max_value * 0.05)
+        left_is_border = left_side.min() <= border_margin
+        right_is_border = right_side.max() >= max_value - border_margin
+
+    if left_is_singleton and left_is_border:
+        print(f"trimmed weak left side from neighborhood: {left_side}")
+        return right_side
+
+    if right_is_singleton and right_is_border:
+        print(f"trimmed weak right side from neighborhood: {right_side}")
+        return left_side
+
+    return neighborhood
+
+
+def split_neighborhood_into_edge_sets(neighborhood, max_value=None):
+    neighborhood = np.array(neighborhood).astype(int)
+
+    neighborhood = trim_weak_end_from_neighborhood(
+        neighborhood,
+        max_value=max_value
+    )
+
+    if len(neighborhood) == 0:
+        return [], []
+
+    if len(neighborhood) == 1:
+        return [neighborhood.tolist()], np.array([float(neighborhood[0])])
+
+    if len(neighborhood) == 2:
+        edge_sets = [
+            [int(neighborhood[0])],
+            [int(neighborhood[1])]
+        ]
+
+    elif len(neighborhood) == 3:
+        gaps = np.diff(neighborhood)
+
+        if gaps[0] == gaps[1]:
+            edge_sets = [
+                [int(neighborhood[0]), int(neighborhood[1])],
+                [int(neighborhood[1]), int(neighborhood[2])]
+            ]
+        elif gaps[0] > gaps[1]:
+            edge_sets = [
+                [int(neighborhood[0])],
+                neighborhood[1:].tolist()
+            ]
         else:
-            neighborhood_type = "cell_like"
+            edge_sets = [
+                neighborhood[:2].tolist(),
+                [int(neighborhood[2])]
+            ]
 
-        classified_neighborhoods.append({
-            **neighborhood,
-            "classification": neighborhood_type,
-            "mean_occupancy": float(np.mean(occupancy[start:end_slice])),
-            "mean_continuity": float(np.mean(continuity[start:end_slice])),
-            "mean_fragmentation": float(np.mean(fragmentation[start:end_slice])),
-            "mean_divider_score": float(mean_divider_score),
-            "peak_divider_score": float(peak_divider_score),
-            "left_transition_strength": (
-                None if left_transition_strength is None else float(left_transition_strength)
-            ),
-            "right_transition_strength": (
-                None if right_transition_strength is None else float(right_transition_strength)
-            ),
-            "touches_left_edge": bool(touches_left_edge),
-            "touches_right_edge": bool(touches_right_edge),
-            "edge_confirmed": bool(edge_confirmed),
-        })
+    else:
+        gaps = np.diff(neighborhood)
+        split_position = int(np.argmax(gaps)) + 1
 
-    return classified_neighborhoods
+        edge_sets = [
+            neighborhood[:split_position].tolist(),
+            neighborhood[split_position:].tolist()
+        ]
 
-def measure_candidate_grid_geometry(
-    row_neighborhoods,
-    col_neighborhoods,
-    image_height,
-    image_width,
-):
-    """
-    Build a candidate grid from divider-like neighborhoods.
-
-    Divider neighborhoods are preserved as bands rather than
-    collapsed to centerlines.
-
-    Cell spans are measured from divider edge to divider edge.
-    """
-
-    row_dividers = [
-        n
-        for n in row_neighborhoods
-        if n["classification"] == "divider_like"
-    ]
-
-    col_dividers = [
-        n
-        for n in col_neighborhoods
-        if n["classification"] == "divider_like"
-    ]
-
-    row_dividers = sorted(
-        row_dividers,
-        key=lambda n: n["start_index"]
-    )
-
-    col_dividers = sorted(
-        col_dividers,
-        key=lambda n: n["start_index"]
-    )
-
-    row_divider_widths = np.array([
-        n["width"]
-        for n in row_dividers
+    edge_centers = np.array([
+        np.mean(edge_set)
+        for edge_set in edge_sets
     ])
 
-    col_divider_widths = np.array([
-        n["width"]
-        for n in col_dividers
-    ])
+    return edge_sets, edge_centers
 
-    row_cell_heights = []
-    col_cell_widths = []
+from itertools import combinations
 
-    for i in range(len(row_dividers) - 1):
+def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, return_score=False):
+    band_centers = np.array(band_centers).astype(float)
 
-        cell_height = (
-            row_dividers[i + 1]["start_index"]
-            - row_dividers[i]["end_index"]
-            - 1
-        )
-
-        row_cell_heights.append(cell_height)
-
-    for i in range(len(col_dividers) - 1):
-
-        cell_width = (
-            col_dividers[i + 1]["start_index"]
-            - col_dividers[i]["end_index"]
-            - 1
-        )
-
-        col_cell_widths.append(cell_width)
-
-    return {
-        "row_dividers": row_dividers,
-        "col_dividers": col_dividers,
-
-        "n_rows": int(len(row_dividers) + 1),
-        "n_cols": int(len(col_dividers) + 1),
-
-        "row_divider_widths": np.array(
-            row_divider_widths
-        ),
-
-        "col_divider_widths": np.array(
-            col_divider_widths
-        ),
-
-        "row_cell_heights": np.array(
-            row_cell_heights
-        ),
-
-        "col_cell_widths": np.array(
-            col_cell_widths
-        ),
-    }
-
-def score_candidate_grid_geometry(grid_geometry):
-    """
-    Score whether the measured divider bands and cell spans form
-    a plausible candidate grid.
-
-    This does not use specimen evidence yet.
-    It only evaluates geometric plausibility.
-    """
-
-    row_divider_widths = np.asarray(grid_geometry["row_divider_widths"])
-    col_divider_widths = np.asarray(grid_geometry["col_divider_widths"])
-    row_cell_heights = np.asarray(grid_geometry["row_cell_heights"])
-    col_cell_widths = np.asarray(grid_geometry["col_cell_widths"])
-
-    def coefficient_of_variation(values):
-        values = np.asarray(values).astype(float)
-
-        if len(values) == 0:
-            return None
-
-        mean_value = values.mean()
-
-        if mean_value == 0:
-            return None
-
-        return values.std() / mean_value
-
-    row_divider_width_cv = coefficient_of_variation(row_divider_widths)
-    col_divider_width_cv = coefficient_of_variation(col_divider_widths)
-    row_cell_height_cv = coefficient_of_variation(row_cell_heights)
-    col_cell_width_cv = coefficient_of_variation(col_cell_widths)
-
-    median_divider_width = np.median(
-        np.concatenate((row_divider_widths, col_divider_widths))
-    )
-
-    median_cell_span = np.median(
-        np.concatenate((row_cell_heights, col_cell_widths))
-    )
-
-    divider_to_cell_ratio = median_divider_width / median_cell_span
-
-    geometry_score = 0
-
-    if row_divider_width_cv is None or row_divider_width_cv < 0.5:
-        geometry_score += 1
-
-    if col_divider_width_cv is None or col_divider_width_cv < 0.5:
-        geometry_score += 1
-
-    if row_cell_height_cv is None or row_cell_height_cv < 0.5:
-        geometry_score += 1
-
-    if col_cell_width_cv is None or col_cell_width_cv < 0.5:
-        geometry_score += 1
-
-    if divider_to_cell_ratio < 0.5:
-        geometry_score += 1
-
-    candidate_grid = {
-        **grid_geometry,
-        "row_divider_width_cv": row_divider_width_cv,
-        "col_divider_width_cv": col_divider_width_cv,
-        "row_cell_height_cv": row_cell_height_cv,
-        "col_cell_width_cv": col_cell_width_cv,
-        "divider_to_cell_ratio": float(divider_to_cell_ratio),
-        "geometry_score": int(geometry_score),
-        "max_geometry_score": 5,
-        "geometry_plausible": geometry_score >= 4,
-    }
-
-    return candidate_grid
-
-def validate_grid_counts_from_csv(
-    candidate_grid,
-    expected_n_rows,
-    expected_n_cols,
-):
-    """
-    Compare a candidate grid against the expected layout
-    defined by the CSV.
-
-    This helper evaluates only structural counts.
-    It does not evaluate geometry or specimen fit.
-
-    Returns quantitative errors, suggested actions, and search direction.
-    """
-
-    observed_n_rows = candidate_grid["n_rows"]
-    observed_n_cols = candidate_grid["n_cols"]
-
-    expected_n_internal_row_dividers = max(0, expected_n_rows - 1)
-    expected_n_internal_col_dividers = max(0, expected_n_cols - 1)
-
-    observed_n_internal_row_dividers = len(candidate_grid["row_dividers"])
-    observed_n_internal_col_dividers = len(candidate_grid["col_dividers"])
-
-    row_count_error = observed_n_rows - expected_n_rows
-    col_count_error = observed_n_cols - expected_n_cols
-
-    row_divider_error = (
-        observed_n_internal_row_dividers
-        - expected_n_internal_row_dividers
-    )
-
-    col_divider_error = (
-        observed_n_internal_col_dividers
-        - expected_n_internal_col_dividers
-    )
-
-    def suggest_action(observed, expected, feature_name):
-        difference = observed - expected
-
-        if difference == 0:
-            return f"{feature_name}: count matches expected layout."
-
-        if difference < 0:
-            return (
-                f"{feature_name}: expected {expected}, found {observed}. "
-                f"Need {abs(difference)} additional."
-            )
-
-        return (
-            f"{feature_name}: expected {expected}, found {observed}. "
-            f"Need to remove {difference}."
-        )
-
-    def search_direction(error):
-        if error < 0:
-            return "add_dividers"
-
-        if error > 0:
-            return "remove_dividers"
-
-        return "correct"
-
-    total_error = (
-        abs(row_count_error)
-        + abs(col_count_error)
-        + abs(row_divider_error)
-        + abs(col_divider_error)
-    )
-
-    return {
-        "counts_match": bool(total_error == 0),
-
-        "expected_n_rows": int(expected_n_rows),
-        "observed_n_rows": int(observed_n_rows),
-        "row_count_error": int(row_count_error),
-
-        "expected_n_cols": int(expected_n_cols),
-        "observed_n_cols": int(observed_n_cols),
-        "col_count_error": int(col_count_error),
-
-        "expected_n_internal_row_dividers": int(
-            expected_n_internal_row_dividers
-        ),
-        "observed_n_internal_row_dividers": int(
-            observed_n_internal_row_dividers
-        ),
-        "row_divider_error": int(row_divider_error),
-
-        "expected_n_internal_col_dividers": int(
-            expected_n_internal_col_dividers
-        ),
-        "observed_n_internal_col_dividers": int(
-            observed_n_internal_col_dividers
-        ),
-        "col_divider_error": int(col_divider_error),
-
-        "row_action": suggest_action(
-            observed_n_rows,
-            expected_n_rows,
-            "rows",
-        ),
-        "col_action": suggest_action(
-            observed_n_cols,
-            expected_n_cols,
-            "columns",
-        ),
-        "row_divider_action": suggest_action(
-            observed_n_internal_row_dividers,
-            expected_n_internal_row_dividers,
-            "row dividers",
-        ),
-        "col_divider_action": suggest_action(
-            observed_n_internal_col_dividers,
-            expected_n_internal_col_dividers,
-            "column dividers",
-        ),
-
-        "row_divider_search_direction": search_direction(
-            row_divider_error
-        ),
-        "col_divider_search_direction": search_direction(
-            col_divider_error
-        ),
-
-        "total_error": int(total_error),
-    }
-
-def score_divider_specimen_conflict(
-    specimen_mask,
-    divider_neighborhoods,
-    axis_label,
-):
-    """
-    Score how much each divider band overlaps specimen evidence.
-
-    specimen_mask should be True where specimen material is present.
-    High conflict means the divider may be cutting through a specimen.
-    """
-
-    scored_dividers = []
-
-    for divider in divider_neighborhoods:
-        start = divider["start_index"]
-        end = divider["end_index"] + 1
-
-        if axis_label == "row":
-            band = specimen_mask[start:end, :]
-        elif axis_label == "col":
-            band = specimen_mask[:, start:end]
-        else:
-            raise ValueError("axis_label must be 'row' or 'col'.")
-
-        specimen_conflict = band.mean()
-
-        scored_divider = {
-            **divider,
-            "specimen_conflict": float(specimen_conflict),
-        }
-
-        scored_dividers.append(scored_divider)
-
-    return scored_dividers
-
-
-def rank_extra_dividers_for_removal(
-    divider_neighborhoods,
-    n_to_remove,
-):
-    """
-    Rank extra divider neighborhoods for removal.
-
-    Suspicious dividers have weak divider evidence,
-    high specimen conflict, or unusual divider width.
-    """
-
-    if n_to_remove <= 0:
+    if expected_n_pairs is None:
         return []
 
-    divider_widths = np.array([
-        d["width"]
-        for d in divider_neighborhoods
-    ]).astype(float)
+    possible_pairs = []
 
-    median_width = np.median(divider_widths)
+    for i, j in combinations(range(len(band_centers)), 2):
+        possible_pairs.append((i, j, band_centers[i], band_centers[j], band_centers[j] - band_centers[i]))
 
-    ranked_dividers = []
+    best_pair_set = None
+    best_score = np.inf
 
-    for divider in divider_neighborhoods:
-        mean_divider_score = divider.get("mean_divider_score", 0)
-        specimen_conflict = divider.get("specimen_conflict", 0)
+    for pair_set in combinations(possible_pairs, expected_n_pairs):
 
-        width_difference = abs(
-            divider["width"] - median_width
-        )
+        used = []
+        widths = []
 
-        if median_width > 0:
-            width_outlier_score = width_difference / median_width
-        else:
-            width_outlier_score = 0
+        for i, j, b1, b2, width in pair_set:
+            used.extend([i, j])
+            widths.append(width)
 
-        removal_score = (
-            (1 - mean_divider_score)
-            + specimen_conflict
-            + width_outlier_score
-        )
+        if len(used) != len(set(used)):
+            continue
 
-        ranked_dividers.append({
-            **divider,
-            "removal_score": float(removal_score),
-        })
+        widths = np.array(widths).astype(float)
 
-    ranked_dividers = sorted(
-        ranked_dividers,
-        key=lambda d: d["removal_score"],
-        reverse=True
-    )
+        mean_width = np.mean(widths)
+        width_variation = np.std(widths)
 
-    return ranked_dividers[:n_to_remove]
+        score = mean_width + (2 * width_variation)
 
+        if score < best_score:
+            best_score = score
+            best_pair_set = pair_set
 
-def remove_extra_dividers(
-    divider_neighborhoods,
-    dividers_to_remove,
-):
-    """
-    Remove selected divider neighborhoods.
+    if best_pair_set is None:
+        if return_score:
+            return [], np.inf
+        return []
 
-    This makes the automatic decision after ranking.
-    """
-
-    remove_starts = set([
-        d["start_index"]
-        for d in dividers_to_remove
-    ])
-
-    kept_dividers = [
-        d
-        for d in divider_neighborhoods
-        if d["start_index"] not in remove_starts
+    pairs = [
+        [float(b1), float(b2)]
+        for i, j, b1, b2, width in best_pair_set
     ]
 
-    return kept_dividers
+    if return_score:
+        return pairs, best_score
 
+    return pairs
 
-def rebuild_candidate_grid_after_removal(
-    candidate_grid,
-    count_validation,
-    specimen_mask,
-):
+#    if best_pair_set is None:
+#        return []
+#
+#    return [
+#        [float(b1), float(b2)]
+#        for i, j, b1, b2, width in best_pair_set
+#    ]
+
+def generate_split_band_center_scenarios(candidate_bands, expected_n_pairs):
+
     """
-    If a candidate grid has too many dividers, rank and remove
-    the most suspicious extras, then rebuild the candidate grid.
+    Generate possible edge-center scenarios when too few band centers were found.
+
+    If the layout expects N divider pairs, we need 2N edge centers.
+    If fewer than 2N band centers were detected, this helper tries every
+    possible way of splitting existing band centers into synthetic A/B edges.
+
+    Example:
+        detected: [B1, B2, B3]
+        needed:   4 edge centers
+
+        scenarios:
+            [B1a, B1b, B2,  B3]
+            [B1,  B2a, B2b, B3]
+            [B1,  B2,  B3a, B3b]
     """
 
-    row_dividers = candidate_grid["row_dividers"]
-    col_dividers = candidate_grid["col_dividers"]
+    if expected_n_pairs is None:
+        return [np.array([np.mean(band) for band in candidate_bands]).astype(float)]
 
-    if count_validation["row_divider_search_direction"] == "remove_dividers":
-        n_to_remove = count_validation["row_divider_error"]
+    expected_n_edges = int(expected_n_pairs) * 2
+    current_n_edges = len(candidate_bands)
 
-        row_dividers = score_divider_specimen_conflict(
-            specimen_mask,
-            row_dividers,
-            axis_label="row",
+    base_centers = [float(np.mean(band)) for band in candidate_bands]
+
+    if current_n_edges >= expected_n_edges:
+        return [np.array(base_centers).astype(float)]
+
+    n_splits_needed = expected_n_edges - current_n_edges
+
+    if n_splits_needed > len(candidate_bands):
+        return [np.array(base_centers).astype(float)]
+
+    scenarios = []
+
+    for split_indices in combinations(range(len(candidate_bands)), n_splits_needed):
+        scenario = []
+
+        for idx, band in enumerate(candidate_bands):
+            band = np.array(band).astype(float)
+
+            if idx in split_indices:
+                if len(band) == 1:
+                    scenario.extend([band[0] - 1, band[0] + 1])
+                elif len(band) == 2:
+                    scenario.extend([band[0], band[1]])
+                elif len(band) == 3:
+                    scenario.extend([band[0], band[-1]])
+                else:
+                    midpoint = len(band) // 2
+                    scenario.extend([
+                        float(np.mean(band[:midpoint])),
+                        float(np.mean(band[midpoint:]))
+                    ])
+            else:
+                scenario.append(float(np.mean(band)))
+
+        scenarios.append(np.array(sorted(scenario)).astype(float))
+
+    print()
+    print("Generated scenarios:")
+
+    for i, scenario in enumerate(scenarios):
+        print(f"Scenario {i+1}: {scenario}")
+
+    return scenarios
+
+  
+def paired_edge_centerlines(binary_mask, axis_label, min_fraction=0.45, min_pair_gap=2, max_pair_gap=20, expected_n_pairs=None):
+    """
+    Find paired edge rows/columns in a binary mask and return midpoint centerlines.
+    """
+
+    if axis_label == "row":
+        occupancy = binary_mask.mean(axis=1)
+    elif axis_label == "col":
+        occupancy = binary_mask.mean(axis=0)
+    else:
+        raise ValueError("axis_label must be 'row' or 'col'")
+
+    candidate_idxs = np.where(occupancy >= min_fraction)[0]
+    
+    candidate_bands, band_centers = collapse_candidate_bands(
+        candidate_idxs,
+        max_band_gap=2
+    )
+
+#######################
+
+    edge_center_scenarios = generate_split_band_center_scenarios(
+        candidate_bands,
+        expected_n_pairs=expected_n_pairs
+    )
+
+    best_pairs = []
+    best_score = np.inf
+    best_scenario = None
+
+    for scenario in edge_center_scenarios:
+
+        pairs, score = select_best_nonoverlapping_pair_set(
+            scenario,
+            expected_n_pairs=expected_n_pairs,
+            return_score=True
         )
 
-        row_remove = rank_extra_dividers_for_removal(
-            row_dividers,
-            n_to_remove,
-        )
+        if len(pairs) == 0:
+            continue
 
-        row_dividers = remove_extra_dividers(
-            row_dividers,
-            row_remove,
-        )
+        if score < best_score:
+            best_score = score
+            best_pairs = pairs
+            best_scenario = scenario
 
-    if count_validation["col_divider_search_direction"] == "remove_dividers":
-        n_to_remove = count_validation["col_divider_error"]
+    pairs = best_pairs
 
-        col_dividers = score_divider_specimen_conflict(
-            specimen_mask,
-            col_dividers,
-            axis_label="col",
-        )
+    centerlines = [
+        int(round((pair[0] + pair[1]) / 2))
+        for pair in pairs
+    ]
 
-        col_remove = rank_extra_dividers_for_removal(
-            col_dividers,
-            n_to_remove,
-        )
+##############################
 
-        col_dividers = remove_extra_dividers(
-            col_dividers,
-            col_remove,
-        )
+#    pairs = select_best_nonoverlapping_pair_set(
+#        band_centers,
+#        expected_n_pairs=expected_n_pairs
+#    )
 
-    updated_candidate_grid = {
-        **candidate_grid,
-        "row_dividers": row_dividers,
-        "col_dividers": col_dividers,
-    }
+    print()
+    print(f"{axis_label.upper()} DIAGNOSTICS")
+    print("band_centers:", band_centers)
+    print("expected_n_pairs:", expected_n_pairs)
+    print("selected_pairs:", pairs)
 
-    return updated_candidate_grid
+#    centerlines = [
+#        int(round((pair[0] + pair[1]) / 2))
+#        for pair in pairs
+#    ]
+#
+#    pairs = []
+#    centerlines = []
+#
+#    used = set()
+#
+#    for idx in band_centers:
+#        idx = float(idx)
+#
+#        possible = band_centers[
+#            (band_centers >= idx + min_pair_gap) &
+#            (band_centers <= idx + max_pair_gap)
+#        ]
+#
+#        if len(possible) == 0:
+#            continue
+#
+#       partner = float(possible[0])
+#
+#        pairs.append([float(idx), partner])
+#        centerlines.append(int(round((idx + partner) / 2)))
+#
+#        used.add(int(idx))
+#        used.add(partner)
+
+    return centerlines, pairs, occupancy, candidate_idxs, candidate_bands, band_centers
 
 
-################################################################################################################################
 
 def review_dividers(
     image,
@@ -2274,7 +2037,7 @@ def score_axis_coherence(im):
     return row_score + col_score + row_sharpness + col_sharpness
 
 
-def collapse_candidate_bands(candidate_idxs):
+def collapse_candidate_bands(candidate_idxs, max_band_gap=2):
     """
     Collapse nearby candidate indices into edge bands.
 
