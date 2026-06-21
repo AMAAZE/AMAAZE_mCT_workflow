@@ -1,52 +1,53 @@
 The running AMAAZE mCT Workflow "To Do" List
 
 ---------------------------------------------------------------------------------------------------------------------
-High priority fixes to the flow (flow won't work) 
+Immediate goals
 ---------------------------------------------------------------------------------------------------------------------
 
-- We need to figure out the z-window value issue. The data shapes are consistent and even a bit smoother at higher averaging but our selection of condidate peaks is brittle. Look at the testing Google Slide in the shared Sam/Jeff/Kat folder and also the conv entitled,"Voxel spacing adjustment" then scroll up until you find a wall of text that begins with, "I think you're zeroing in on the right problem." I think this is playing into the run time issues while writing the npy files during the extraction phase. 
+- Run 04 and 05. Make sure the meshes are meshing.
 
-- Once the tier division is established test the remainder of the workflow on the various datasets to ensure divider detection is robust. 
+- Remove the ISO value detection. We'll deal with that later.
+    - Do make sure that we request ISO value at the end of 03_segment.py
+    - Later when we get the ISO-value detection running properly we can simply have it run on the subvolume and offer a print statement with a suggested value. The user will still type the one they want whether suggestion or their own.
 
-- Once 03 is sussed, test downstream effects to surfacing both the time savings and the quality of the end outputs. 
+- Set all steps up so that the user can initialize the subequent step. 
+    - Put all user interface from 04 at the end of 03 so that 04 can batch process
+    - When 04 is initiated, give the user the option to choose multiple output paths
+    - When batch processssing is chosen, 05 should auto-intiate so the user can return to both the original and clean meshes. 
 
-- Masking fully black pixels. Compression could mess with this, so look for that. 
+- Make sure that the manual override for each cell segmentation follows immediately after its companion automated suggestion.
 
-- Test the ISO interface
+- replace stability_image lable with local_homogeneity_image
 
-- Can you set up where you get through 00 - 03 and then batch 04 and 05? 
+- Go through the workflow and identify the confusing moments then fix them  
 
-- reintorduce bach-and-forth behavior of the "m"
-
-- replace stability image lable with local_homogeneity_image
-
-- Make sure that you output all interactive images automatically so you have data when others are running things. Add the additional print statements that are useful to the metadata. You're almost there! Thresholding, surfacing, batching. You can be really proud of yourself.  
-
----------------------------------------------------------------------------------------------------------------------
-Usability concerns (flow will work but could be better)
----------------------------------------------------------------------------------------------------------------------
-
-- If you close the window in 01, it won't reappear if you need it still. 
-
-- I noticed during 03, that when I select dividers, it accepts whatever I do, but perhaps I made a mistake. the work around is to put too many dividers on the board and it will fuss and ask you to try again. However, if a user doesn't know the work around but doesn't like their placement, they have no option to recoup without running the whole script again. Let's look for places in the script where the user can make overrides by image or graph interaction and ensure that we double-check to make sure they are pleased with what they chose. 
+- Make sure to skip divider detection when expected_n_dividers == 0
 
 - 04 should print progress after each specimen, something like “writing volume 3/8…” and “surfacing mesh 3/8…”, because file-size watching should not be the only proof that the script is alive.
 
-- Update the md template to separate extraction and surfacing times in the summary and maybe in the descriptive part separate further: extraction, write npy, etc. because we were getting stalledin the npy writing, although this seems to be a product of the z-averaging. 
+- Identify all print statement outputs and graphical interface outputs that aren't making their way into the metadata json
+    - Identify what you want to keep and incorporate that into the flow.
 
-- Make sure that wherever this is (or should be) a runtime error that this is changed to an interactive moment with the user so they don't necessarily have to run the entire script.
+- Update the md template to separate extraction and surfacing times in the summary and in the descriptive part separate further: extraction, write npy, etc. because we were getting stalledin the npy writing, although this seems to be a product of the z-averaging. 
 
-- Go through all scripts and replace all obscure labels with more descriptive labels. 
-
-- I wonder if we could automated saving .png outputs of some of the images and figures in 01 and 03. I'm doing a lot of screenshotting and I can imagine someone else wanting to do the same. It would certainly make my life easier. 
-
-- During 03, if you choose 'm' and it will show you its suggestions. If you like the columns and only adjust the rows, it will retain the column dividers. However, if you make a partial adjustment to the column dividers, it will overwrite everything for columns. 
+- Make sure that wherever possible when there is (or should be) a runtime error that this is changed to an interactive moment with the user so they don't necessarily have to rerun the entire script.
 
 - Add dataset names to all interface graphics!
 
+- Fix occupancy graph by adding blue bands even when single candidates and adding the blue bands to the legend.
+
+- 04 should print progress after each specimen, something like “writing volume 3/8…” and “surfacing mesh 3/8…”, because file-size watching should not be the only proof that the script is alive.
+
+- rework 00's rotation interface so that horizontal and vertical guidelines show up at the center of the image and either the user can click on the image and rotate it such that their dividers appear parallel to the guidelines as a means for assessing degree of rotation, or a separate window pops up with both a slider and window with up/down arrows next to it and in the window is the current rotation angle and the user can use the slider or type into the window or advance with the arrows to give rotation. As opposed to an iterative guess input affirm loop. 
+
+
 ---------------------------------------------------------------------------------------------------------------------
-Update / create accessory scripts (not necessary for workflow but easier to adjust prior to updating documentation)
+Less immediate goals
 ---------------------------------------------------------------------------------------------------------------------
+
+- Once 03 is sussed, run the different tests, checking times, quality, etc. 
+    - Vary the z-window value
+    - Identify any other variations you may wish to test.
 
 - update the photo creation script to align with workflow scripts
 
@@ -58,13 +59,7 @@ Update / create accessory scripts (not necessary for workflow but easier to adju
 - create a reproduce_workflow script so the run_metadata.json has purpose. 
     - Add an immediate, before continuing with this script make sure you rename the output folders from previous runs so you don't overwrite anything print statement. 
 
-- clean up the .py that outputs jpg of dcm slices so they can easily be seen without having to import them one-by-one into photoshop. 
-
-- rework 00's rotation interface so that horizontal and vertical guidelines show up at the center of the image and either the user can click on the image and rotate it such that their dividers appear parallel to the guidelines as a means for assessing degree of rotation, or a separate window pops up with a slider and window with up/down arrows next to it and in the window is the current rotation angle and the user can use the slider or type into the window or advance with the arrows to give rotation. As opposed to an iterative guess input affirm loop. 
-
----------------------------------------------------------------------------------------------------------------------
-Documentation (Address at the end once everything works and is usable)
----------------------------------------------------------------------------------------------------------------------
+- clean up and incorporate the the dicom to jpg conversion script. 
 
 - Update script header descriptions
 

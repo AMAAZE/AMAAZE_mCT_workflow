@@ -331,7 +331,16 @@ for specimen_id in extraction_plan["specimen_id"]:
     specimen_id = str(specimen_id)
     fname = os.path.join(outpath, specimen_id)
 
+    print("HELLO I AM INSIDE THE IMAGES LOOP")
     IMAGES = np.load(fname + ".npy", mmap_mode="r")
+
+    print(
+        specimen_id,
+        "intensity range:",
+        IMAGES.min(),
+        IMAGES.max()
+    )
+
     overview = dicom.bone_overview(IMAGES)
     plt.imsave(fname + ".png", overview, cmap="gray")
 

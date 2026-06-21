@@ -522,6 +522,35 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
     cutoff = np.percentile(stability_image, 20)
     dark_mask = stability_image < cutoff
+    row_occupancy, col_occupancy = compute_occupancy_profiles(dark_mask)
+
+    #row_min_fraction = 0.25
+    row_min_fraction = estimate_occupancy_threshold_by_peak_distance(row_occupancy)[0]
+    row_prominence_peaks = estimate_occupancy_threshold_by_peak_distance(row_occupancy)[1]
+
+    #col_min_fraction = 0.25
+    col_min_fraction = estimate_occupancy_threshold_by_peak_distance(col_occupancy)[0]
+    col_prominence_peaks = estimate_occupancy_threshold_by_peak_distance(col_occupancy)[1]
+
+    print()
+    print("=" * 60)
+    print(f"Tier {i + 1} prominence threshold test")
+
+    print()
+    print(f"ROW threshold = {row_min_fraction}")
+
+    for peak in row_prominence_peaks:
+        print(peak)
+
+    print()
+    print(f"COL threshold = {col_min_fraction}")
+
+    for peak in col_prominence_peaks:
+        print(peak)
+
+    print("=" * 60)
+    print()
+
 
     """
     NOTE(dev): occupancy_threshold=0.45, min_pair_gap=20,
@@ -543,8 +572,31 @@ for i, normalized_image in enumerate(normalized_tier_images):
     Review across additional datasets.
     """
 
-    row_min_fraction = 0.35
-    col_min_fraction = 0.45
+#    row_threshold_table = build_initial_threshold_table(row_occupancy)
+#    row_plausibility_table, row_plausible_regions, row_lowest_plausible_region = identify_plausible_regions(
+#        row_threshold_table,
+#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_rows"] - 1
+#    )
+#
+#    row_min_fraction = identify_occupancy_threshold(
+#        occupancy=row_occupancy,
+#        lowest_plausible_region=row_lowest_plausible_region,
+#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_rows"] - 1,
+#        fine_step=0.01,
+#    )
+#
+#    col_threshold_table = build_initial_threshold_table(col_occupancy)
+#    col_plausibility_table, col_plausible_regions, col_lowest_plausible_region = identify_plausible_regions(
+#        col_threshold_table,
+#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_cols"] - 1
+#    )
+#
+#    col_min_fraction = identify_occupancy_threshold(
+#        occupancy=col_occupancy,
+#        lowest_plausible_region=col_lowest_plausible_region,
+#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_cols"] - 1,
+#        fine_step=0.01,
+#    )
 
     row_centers, row_pairs, row_occupancy, row_candidates, row_candidate_bands, row_band_centers = paired_edge_centerlines(
         dark_mask,
@@ -599,7 +651,6 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
     # Column occupancy profile
     axs[1].plot(col_occupancy)
-
 
     axs[1].axhline(
         col_min_fraction,

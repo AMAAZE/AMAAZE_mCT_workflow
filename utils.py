@@ -815,6 +815,854 @@ def resize_preserve_aspect(im, max_edge=225):
     return cv.resize(im, (new_w, new_h)).copy()
 
 
+###########################################################
+
+# ============================================================
+# FUNCTIONS USED BY 03_segment.py for calculating the occupancy threshold
+# ============================================================
+
+def estimate_occupancy_threshold_by_peak_distance(
+    occupancy,
+    threshold_step=0.01,
+    close_distance=10,
+    min_prominence=0,
+):
+    """
+    Estimate an occupancy threshold by lowering from the shortest retained
+    prominence peak until a far-away new peak appears.
+
+    Logic:
+    1. Find occupancy peaks and their prominences.
+    2. Keep the most prominent peaks.
+    3. Start at the occupancy height of the weakest retained peak.
+    4. Lower the threshold one step at a time.
+    5. If newly admitted peaks are close to retained peaks, keep lowering.
+    6. If a newly admitted peak is far from every retained peak, stop and
+       return the previous threshold.
+    """
+
+    occupancy = np.asarray(occupancy).astype(float)
+
+    peaks, peak_props = find_peaks(
+        occupancy,
+        prominence=min_prominence,
+    )
+
+    if len(peaks) == 0:
+        return None, []
+
+    prominences = np.asarray(peak_props["prominences"]).astype(float)
+    peak_values = occupancy[peaks]
+
+    sorted_prominences = np.sort(prominences)
+    prominence_jumps = np.diff(sorted_prominences)
+
+    largest_jump_index = int(np.argmax(prominence_jumps))
+    prominence_cutoff = sorted_prominences[largest_jump_index + 1]
+
+    keep_order = np.where(prominences >= prominence_cutoff)[0]
+
+    retained_peaks = peaks[keep_order]
+    retained_prominences = prominences[keep_order]
+    retained_peak_values = peak_values[keep_order]
+
+    if len(retained_peaks) == 0:
+        return None, []
+
+    starting_threshold = float(occupancy[retained_peaks[0]])
+    previous_threshold = starting_threshold
+
+    previous_visible_peaks = peaks[
+        peak_values >= previous_threshold
+    ]
+
+    threshold = starting_threshold - threshold_step
+
+    stop_reason = "reached bottom of curve"
+
+    final_threshold = float(previous_threshold)
+
+    while threshold >= np.min(occupancy):
+
+        current_visible_peaks = peaks[
+            peak_values >= threshold
+        ]
+
+        newly_visible_peaks = np.setdiff1d(
+            current_visible_peaks,
+            previous_visible_peaks
+        )
+
+        for new_peak in newly_visible_peaks:
+
+            nearest_retained_distance = float(
+                np.min(np.abs(retained_peaks - new_peak))
+            )
+
+            if nearest_retained_distance > close_distance:
+                stop_reason = (
+                    f"new peak at {int(new_peak)} was "
+                    f"{nearest_retained_distance:.1f} pixels from nearest retained peak"
+                )
+
+                peak_summaries = []
+
+                for peak, prom in zip(retained_peaks, retained_prominences):
+                    peak_summaries.append({
+                        "peak_index": int(peak),
+                        "peak_value": float(occupancy[peak]),
+                        "prominence": float(prom),
+                        "status": "retained",
+                    })
+
+                peak_summaries.append({
+                    "peak_index": int(new_peak),
+                    "peak_value": float(occupancy[new_peak]),
+                    "prominence": float(prominences[np.where(peaks == new_peak)[0][0]]),
+                    "nearest_retained_distance": nearest_retained_distance,
+                    "status": "stopped_threshold",
+                    "stop_reason": stop_reason,
+                })
+
+                return float(previous_threshold), peak_summaries
+
+        previous_visible_peaks = current_visible_peaks
+        previous_threshold = threshold
+        threshold -= threshold_step
+
+    peak_summaries = []
+
+    for peak, prom in zip(retained_peaks, retained_prominences):
+        peak_summaries.append({
+            "peak_index": int(peak),
+            "peak_value": float(occupancy[peak]),
+            "prominence": float(prom),
+            "status": "retained",
+        })
+
+    return final_threshold, peak_summaries
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def estimate_occupancy_threshold_by_prominence_gap(
+    occupancy,
+    min_prominence=0,
+    threshold_padding=0.01,
+):
+    """
+    Estimate occupancy threshold from the natural gap in peak prominences.
+
+    Strategy:
+    1. Find local peaks in the occupancy curve.
+    2. Sort peak prominences from low to high.
+    3. Find the largest jump in prominence.
+    4. Keep peaks above that jump as standout peaks.
+    5. Set threshold just below the lowest occupancy value among standout peaks.
+    """
+
+    occupancy = np.asarray(occupancy).astype(float)
+
+#######################################################################################
+
+    # DEV TEST: raise curve floor before peak detection
+
+    raw_peak_values = occupancy[
+        find_peaks(occupancy, prominence=min_prominence)[0]
+    ]
+
+    height_floor = np.percentile(
+        raw_peak_values,
+        0
+    )
+
+    occupancy_for_peaks = occupancy.copy()
+    occupancy_for_peaks[occupancy_for_peaks < height_floor] = height_floor
+
+    pop_cutoff = float(height_floor)
+
+#######################################################################################
+
+    peaks, peak_props = find_peaks(
+        occupancy_for_peaks,
+        prominence=min_prominence,
+    )
+
+    peaks, peak_props = find_peaks(
+        occupancy,
+        prominence=min_prominence,
+    )
+
+    if len(peaks) == 0:
+        return None, []
+
+    prominences = np.asarray(
+        peak_props["prominences"]
+    ).astype(float)
+
+    if len(prominences) == 1:
+        threshold = float(
+            max(0, occupancy[peaks[0]] - threshold_padding)
+        )
+
+        return threshold, [{
+            "peak_index": int(peaks[0]),
+            "peak_value": float(occupancy[peaks[0]]),
+            "prominence": float(prominences[0]),
+        }]
+
+    sorted_prominences = np.sort(prominences)
+    prominence_jumps = np.diff(sorted_prominences)
+
+    largest_jump_index = int(np.argmax(prominence_jumps))
+
+    prominence_cutoff = sorted_prominences[
+        largest_jump_index + 1
+    ]
+
+
+    peak_values = occupancy[peaks]
+
+    sorted_peak_values = np.sort(peak_values)
+    peak_value_jumps = np.diff(sorted_peak_values)
+
+    largest_height_jump_index = int(
+        np.argmax(peak_value_jumps)
+    )
+
+    height_cutoff = sorted_peak_values[
+        largest_height_jump_index + 1
+    ]
+
+
+    prominence_keep_mask = (
+        prominences >= prominence_cutoff
+    )
+
+    height_keep_mask = (
+        peak_values >= height_cutoff
+    )
+
+    #keep_mask = (prominence_keep_mask | height_keep_mask)
+    keep_mask = prominence_keep_mask
+    #keep_mask = height_keep_mask
+
+    standout_peaks = peaks[keep_mask]
+    standout_prominences = prominences[keep_mask]
+    standout_peak_values = occupancy[standout_peaks]
+
+    rejected_peak_values = occupancy[peaks[~keep_mask]]
+    rejected_peaks = peaks[~keep_mask]
+    rejected_prominences = prominences[~keep_mask]
+
+    if len(rejected_peak_values) > 0:
+        threshold = float(
+            max(0, np.max(rejected_peak_values) - threshold_padding)
+        )
+    else:
+        threshold = float(
+            max(0, np.min(standout_peak_values) - threshold_padding)
+        )
+
+    peak_summaries = []
+
+    rank_order = np.argsort(standout_prominences)[::-1]
+
+    for rank, idx in enumerate(rank_order, start=1):
+        peak_index = int(standout_peaks[idx])
+
+        peak_summaries.append({
+            "rank": int(rank),
+            "peak_index": peak_index,
+            "peak_value": float(occupancy[peak_index]),
+            "prominence": float(standout_prominences[idx]),
+            "status": "retained",
+        })
+
+    reject_order = np.argsort(rejected_prominences)[::-1]
+
+    for rank, idx in enumerate(reject_order[:4], start=1):
+        peak_index = int(rejected_peaks[idx])
+
+        peak_summaries.append({
+            "rank": int(rank),
+            "peak_index": peak_index,
+            "peak_value": float(occupancy[peak_index]),
+            "prominence": float(rejected_prominences[idx]),
+            "status": "rejected",
+        })
+
+    return threshold, peak_summaries, pop_cutoff, occupancy_for_peaks
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def occupancy_threshold_landscape(
+    occupancy,
+    threshold,
+    max_band_gap=2,
+):
+    """
+    Holding tank for all the descriptors at the band-level
+    and the occupancy-threshold-wide level.
+    """
+
+    candidate_idxs = np.where(occupancy >= threshold)[0]
+
+    candidate_bands, band_centers = collapse_candidate_bands(
+        candidate_idxs,
+        max_band_gap=max_band_gap
+    )
+
+    band_ranges = []
+    band_n_candidates_list = []
+    band_centers_list = []
+    band_widths = []
+    band_width_curve_fractions = []
+
+    for band, band_center in zip(candidate_bands, band_centers):
+
+        left_index = int(band[0])
+        right_index = int(band[-1])
+
+        band_range = [left_index, right_index]
+
+        band_n_candidates = int(len(band))
+
+        band_width = right_index - left_index + 1
+
+        band_width_curve_fraction = (
+            band_width / len(occupancy)
+        )
+
+        band_ranges.append(band_range)
+        band_n_candidates_list.append(band_n_candidates)
+        band_centers_list.append(float(band_center))
+        band_widths.append(band_width)
+        band_width_curve_fractions.append(
+            band_width_curve_fraction
+        )
+
+    center_gaps_left = []
+    center_gaps_right = []
+
+    for i, band_center in enumerate(band_centers_list):
+
+        #
+        # Gap to nearest thing on the left
+        #
+
+        if i == 0:
+            center_gap_left = float(
+                band_center
+            )
+        else:
+            previous_band_center = band_centers_list[i - 1]
+
+            center_gap_left = float(
+                band_center - previous_band_center
+            )
+
+        #
+        # Gap to nearest thing on the right
+        #
+
+        if i == len(band_centers_list) - 1:
+            center_gap_right = float(
+                (len(occupancy) - 1) - band_center
+            )
+        else:
+            next_band_center = band_centers_list[i + 1]
+
+            center_gap_right = float(
+                next_band_center - band_center
+            )
+
+        center_gaps_left.append(
+            center_gap_left
+        )
+
+        center_gaps_right.append(
+            center_gap_right
+        )
+
+    return {
+
+        "threshold": float(threshold),
+
+        "curve_length": int(len(occupancy)),
+
+        "n_bands": int(len(candidate_bands)),
+
+        "band_ranges":
+            band_ranges,
+
+        "band_n_candidates_list":
+            band_n_candidates_list,
+
+        "total_n_candidates":
+            int(len(candidate_idxs)),
+
+        "band_centers":
+            band_centers_list,
+
+        "band_widths":
+            band_widths,
+
+        "band_width_curve_fractions":
+            band_width_curve_fractions,
+
+        "center_gaps_left":
+            center_gaps_left,
+
+        "center_gaps_right":
+            center_gaps_right,
+    }
+
+
+
+def build_initial_threshold_table(
+    occupancy,
+    threshold_step=0.05,
+    max_band_gap=2,
+):
+    """
+    Build a coarse occupancy-threshold table.
+
+    Each row contains the full occupancy landscape
+    at one threshold value.
+
+    No comparisons are made here.
+    No stability is assigned here.
+    No threshold decisions are made here.
+    """
+
+    max_threshold = float(np.max(occupancy))
+    min_threshold = float(np.min(occupancy))
+
+    threshold_table = []
+
+    threshold = max_threshold
+
+    while threshold >= min_threshold:
+
+        landscape = occupancy_threshold_landscape(
+            occupancy=occupancy,
+            threshold=threshold,
+            max_band_gap=max_band_gap,
+        )
+
+        threshold_table.append(landscape)
+
+        threshold -= threshold_step
+
+    return threshold_table
+
+
+def compare_threshold_table_rows(
+    row_before,
+    row_after,
+):
+    """
+    Describe what changed between two neighboring threshold landscapes.
+
+    This does not decide whether either row is good or bad.
+    """
+
+    n_bands_before = row_before["n_bands"]
+    n_bands_after = row_after["n_bands"]
+
+    total_n_candidates_before = sum(row_before["band_n_candidates_list"])
+    total_n_candidates_after = sum(row_after["band_n_candidates_list"])
+
+    total_band_width_before = sum(row_before["band_widths"])
+    total_band_width_after = sum(row_after["band_widths"])
+
+    return {
+        "threshold_before": row_before["threshold"],
+        "threshold_after": row_after["threshold"],
+
+        "n_bands_before": n_bands_before,
+        "n_bands_after": n_bands_after,
+        "n_bands_change": n_bands_after - n_bands_before,
+
+        "band_centers_before": row_before["band_centers"],
+        "band_centers_after": row_after["band_centers"],
+
+        "band_ranges_before": row_before["band_ranges"],
+        "band_ranges_after": row_after["band_ranges"],
+
+        "band_n_candidates_before": row_before["band_n_candidates_list"],
+        "band_n_candidates_after": row_after["band_n_candidates_list"],
+
+        "total_n_candidates_before": total_n_candidates_before,
+        "total_n_candidates_after": total_n_candidates_after,
+        "total_n_candidates_change": (
+            total_n_candidates_after - total_n_candidates_before
+        ),
+
+        "band_widths_before": row_before["band_widths"],
+        "band_widths_after": row_after["band_widths"],
+
+        "total_band_width_before": total_band_width_before,
+        "total_band_width_after": total_band_width_after,
+        "total_band_width_change": (
+            total_band_width_after - total_band_width_before
+        ),
+
+        "center_gaps_left_before": row_before["center_gaps_left"],
+        "center_gaps_left_after": row_after["center_gaps_left"],
+
+        "center_gaps_right_before": row_before["center_gaps_right"],
+        "center_gaps_right_after": row_after["center_gaps_right"],
+    }
+
+def assess_threshold_landscape_plausibility(
+    landscape,
+    expected_n_dividers,
+    close_gap_fraction=0.15,
+    max_bands_per_divider=2,
+):
+    """
+    Assess whether one threshold landscape is plausible for the expected
+    number of dividers.
+
+    A divider can be represented by either:
+    - one band, or
+    - two closely spaced bands.
+
+    This helper does not choose a final threshold.
+    """
+
+    n_bands = landscape["n_bands"]
+    band_centers = landscape["band_centers"]
+    band_widths = landscape["band_widths"]
+    band_n_candidates_list = landscape["band_n_candidates_list"]
+
+    total_n_candidates = landscape["total_n_candidates"]
+
+    n_singleton_bands = sum(
+        n == 1
+        for n in band_n_candidates_list
+    )
+
+    expected_min_bands = int(expected_n_dividers)
+    expected_max_bands = int(expected_n_dividers * max_bands_per_divider)
+
+    band_count_plausible = (
+        expected_min_bands <= n_bands <= expected_max_bands
+    )
+
+    if n_bands == 0:
+        return {
+            "threshold": landscape["threshold"],
+            "is_plausible": False,
+            "reason": "no bands detected",
+            "n_bands": n_bands,
+            "expected_min_bands": expected_min_bands,
+            "expected_max_bands": expected_max_bands,
+            "band_centers": band_centers,
+            "band_widths": band_widths,
+            "band_n_candidates_list": band_n_candidates_list,
+            "center_gaps": [],
+            "close_center_gaps": [],
+            "total_n_candidates": total_n_candidates,
+            "n_singleton_bands": n_singleton_bands,
+        }
+
+    center_gaps = [
+        float(band_centers[i + 1] - band_centers[i])
+        for i in range(len(band_centers) - 1)
+    ]
+
+    curve_length = landscape["curve_length"]
+
+    if len(center_gaps) > 0:
+        close_gap_cutoff = close_gap_fraction * curve_length
+    else:
+        close_gap_cutoff = 0
+
+    close_center_gaps = [
+        gap for gap in center_gaps
+        if gap <= close_gap_cutoff
+    ]
+
+    paired_band_possible = (
+        n_bands > expected_n_dividers
+        and len(close_center_gaps) > 0
+    )
+
+    if band_count_plausible:
+        is_plausible = True
+        reason = "band count fits expected single-band or paired-band divider representation"
+
+    else:
+        is_plausible = False
+        reason = "band count does not fit expected divider representation"
+
+    return {
+        "threshold": landscape["threshold"],
+        "is_plausible": is_plausible,
+        "reason": reason,
+        "n_bands": n_bands,
+        "expected_min_bands": expected_min_bands,
+        "expected_max_bands": expected_max_bands,
+        "band_centers": band_centers,
+        "band_widths": band_widths,
+        "band_n_candidates_list": band_n_candidates_list,
+        "center_gaps": center_gaps,
+        "close_center_gaps": close_center_gaps,
+        "paired_band_possible": paired_band_possible,
+        "curve_length": curve_length,
+        "close_gap_cutoff": close_gap_cutoff,
+        "total_n_candidates": total_n_candidates,
+        "n_singleton_bands": n_singleton_bands,
+    }
+
+def identify_plausible_regions(
+    threshold_table,
+    expected_n_dividers,
+):
+    plausibility_table = [
+        assess_threshold_landscape_plausibility(
+            landscape=row,
+            expected_n_dividers=expected_n_dividers,
+        )
+        for row in threshold_table
+    ]
+
+    plausible_regions = []
+    region_start_index = None
+
+    for i, row in enumerate(plausibility_table):
+
+        if row["is_plausible"] and region_start_index is None:
+            region_start_index = i
+
+        if (
+            (not row["is_plausible"] or i == len(plausibility_table) - 1)
+            and region_start_index is not None
+        ):
+            region_end_index = i - 1 if not row["is_plausible"] else i
+
+            plausible_regions.append({
+                "start_index": region_start_index,
+                "end_index": region_end_index,
+                "threshold_high": plausibility_table[region_start_index]["threshold"],
+                "threshold_low": plausibility_table[region_end_index]["threshold"],
+                "n_rows": region_end_index - region_start_index + 1,
+                "rows": plausibility_table[region_start_index:region_end_index + 1],
+            })
+
+            region_start_index = None
+
+    if len(plausible_regions) > 0:
+        lowest_plausible_region = plausible_regions[-1]
+    else:
+        lowest_plausible_region = None
+
+    return plausibility_table, plausible_regions, lowest_plausible_region
+
+
+def identify_occupancy_threshold(
+    occupancy,
+    lowest_plausible_region,
+    expected_n_dividers,
+    fine_step=0.01,
+    max_band_gap=2,
+):
+    """
+    Choose an occupancy threshold from the lowest plausible coarse region.
+
+    Fine pass rule:
+    - prefer the lowest plausible threshold with zero singleton bands
+    - if all plausible fine thresholds have singleton bands, use the lowest plausible threshold
+    """
+
+    if expected_n_dividers == 0:
+        return 1.0
+
+    if lowest_plausible_region is None:
+        return None
+
+    threshold_high = lowest_plausible_region["threshold_high"]
+    threshold_low = lowest_plausible_region["threshold_low"]
+
+    fine_threshold_table = []
+
+    threshold = threshold_high
+
+    while threshold >= threshold_low:
+        fine_threshold_table.append(
+            occupancy_threshold_landscape(
+                occupancy=occupancy,
+                threshold=threshold,
+                max_band_gap=max_band_gap,
+            )
+        )
+
+        threshold -= fine_step
+
+    fine_plausibility_table, fine_plausible_regions, fine_lowest_plausible_region = identify_plausible_regions(
+        fine_threshold_table,
+        expected_n_dividers=expected_n_dividers,
+    )
+
+    plausible_rows = [
+        row
+        for row in fine_plausibility_table
+        if row["is_plausible"]
+    ]
+
+    if len(plausible_rows) == 0:
+        return None
+
+    for row in reversed(plausible_rows):
+        if row["n_singleton_bands"] == 0:
+            return row["threshold"]
+
+    return plausible_rows[-1]["threshold"]
+
+
+def summarize_plausible_regions(
+    plausible_regions,
+    threshold_table,
+):
+    """
+    Summarize each plausible region for comparison.
+
+    No region selection is performed here.
+    No threshold selection is performed here.
+    """
+
+    max_threshold = threshold_table[0]["threshold"]
+    min_threshold = threshold_table[-1]["threshold"]
+
+    region_summaries = []
+
+    for region in plausible_regions:
+
+        rows = region["rows"]
+
+        mean_n_bands = float(np.mean([
+            row["n_bands"]
+            for row in rows
+        ]))
+
+        mean_total_candidates = float(np.mean([
+            row["total_n_candidates"]
+            for row in rows
+        ]))
+
+        mean_n_singleton_bands = float(np.mean([
+            sum(
+                n == 1
+                for n in row["band_n_candidates_list"]
+            )
+            for row in rows
+        ]))
+
+        region_summaries.append({
+
+            "threshold_high":
+                region["threshold_high"],
+
+            "threshold_low":
+                region["threshold_low"],
+
+            "n_rows":
+                region["n_rows"],
+
+            "distance_from_maximum":
+                max_threshold - region["threshold_high"],
+
+            "distance_from_minimum":
+                region["threshold_low"] - min_threshold,
+
+            "mean_n_bands":
+                mean_n_bands,
+
+            "mean_total_candidates":
+                mean_total_candidates,
+
+            "mean_n_singleton_bands":
+                mean_n_singleton_bands,
+
+            "rows":
+                rows,
+        })
+
+    return region_summaries
+
+
+
+
+
+
+###########################################################
+
+
+
+
+
+
+
+
 # ============================================================
 # FUNCTIONS USED BY 03_segment.py
 # ============================================================
@@ -1204,27 +2052,6 @@ def select_tier_boundaries_by_edge_and_score(
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-###########################################################
-
 def select_tier_boundaries_by_edge_and_prominence(
     mean_intensity_profile_z,
     peaks,
@@ -1366,6 +2193,18 @@ def local_stability_image(image, window_size=5, percentile_low=2, percentile_hig
         stability = np.clip(stability, 0, 1)
 
     return stability
+
+def compute_occupancy_profiles(binary_mask):
+    """
+    Compute row and column occupancy profiles from a binary mask.
+
+    Occupancy is the fraction of True pixels in each row or column.
+    """
+
+    row_occupancy = binary_mask.mean(axis=1)
+    col_occupancy = binary_mask.mean(axis=0)
+
+    return row_occupancy, col_occupancy
 
 def estimate_large_gap_cutoff_from_candidates(row_candidates, col_candidates):
     """
@@ -1698,7 +2537,17 @@ def split_neighborhood_into_edge_sets(neighborhood, max_value=None):
 
 from itertools import combinations
 
-def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, return_score=False):
+
+
+
+
+
+
+
+
+
+
+def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, axis_length=None, return_score=False):
     band_centers = np.array(band_centers).astype(float)
 
     if expected_n_pairs is None:
@@ -1729,7 +2578,34 @@ def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, ret
         mean_width = np.mean(widths)
         width_variation = np.std(widths)
 
-        score = mean_width + (2 * width_variation)
+        if axis_length is not None:
+
+            centerlines = np.sort([
+                (b1 + b2) / 2
+                for i, j, b1, b2, width in pair_set
+            ])
+
+            boundaries = np.concatenate((
+                [0],
+                centerlines,
+                [axis_length - 1]
+            ))
+
+            cell_widths = np.diff(boundaries)
+
+            mean_cell_width = np.mean(cell_widths)
+            cell_width_variation = np.std(cell_widths)
+
+        else:
+
+            mean_cell_width = 0
+            cell_width_variation = 0
+
+        score = (
+           mean_width
+           + (2 * width_variation)
+           + (2 * cell_width_variation)
+        )
 
         if score < best_score:
             best_score = score
@@ -1750,13 +2626,10 @@ def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, ret
 
     return pairs
 
-#    if best_pair_set is None:
-#        return []
-#
-#    return [
-#        [float(b1), float(b2)]
-#        for i, j, b1, b2, width in best_pair_set
-#    ]
+
+
+
+
 
 def generate_split_band_center_scenarios(candidate_bands, expected_n_pairs):
 
@@ -1833,10 +2706,14 @@ def paired_edge_centerlines(binary_mask, axis_label, min_fraction=0.45, min_pair
     Find paired edge rows/columns in a binary mask and return midpoint centerlines.
     """
 
+    row_occupancy, col_occupancy = compute_occupancy_profiles(
+        binary_mask
+    )
+
     if axis_label == "row":
-        occupancy = binary_mask.mean(axis=1)
+        occupancy = row_occupancy
     elif axis_label == "col":
-        occupancy = binary_mask.mean(axis=0)
+        occupancy = col_occupancy
     else:
         raise ValueError("axis_label must be 'row' or 'col'")
 
