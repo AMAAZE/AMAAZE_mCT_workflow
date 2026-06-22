@@ -26,6 +26,8 @@ import numpy as np
 import pandas as pd
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider, Button
+from matplotlib.patches import Rectangle
 
 import cv2 as cv
 import skimage.io as io
@@ -697,9 +699,154 @@ def apply_preview_rotation(im, angle_deg):
         resize=True,
         preserve_range=True
     )
+
+def choose_rotation_angle_interactively(
+    oriented_image,
+    dataset_folder_name
+):
+    """
+    Interactive rotation selector.
+    Returns one final rotation angle in degrees.
+    """
+
+    rotation_angle = {"value": 0.0}
+
+    image_h, image_w = oriented_image.shape[:2]
+    display_size = int(np.ceil(np.sqrt(image_h**2 + image_w**2)))
+    display_center = display_size / 2
+
+    fig, ax = plt.subplots()
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("black")
+    ax.set_box_aspect(1)
+    plt.subplots_adjust(bottom=0.25)
+
+    rotated_image = apply_preview_rotation(
+        oriented_image,
+        rotation_angle["value"]
+    )
+
+    ax.imshow(
+        rotated_image, 
+        cmap="gray", 
+        aspect="equal",
+        extent = [
+            display_center - rotated_image.shape[1] / 2,
+            display_center + rotated_image.shape[1] / 2,
+            display_center + rotated_image.shape[0] / 2,
+            display_center - rotated_image.shape[0] / 2,
+        ],
+        zorder=1
+    )
+    
+    ax.set_xlim(0, display_size)
+    ax.set_ylim(display_size, 0)
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            display_size,
+            display_size,
+            facecolor="black",
+            zorder=0
+        )
+    )
+
+    ax.axhline(display_center, color="red", linewidth=0.8)
+    ax.axvline(display_center, color="red", linewidth=0.8)
+    ax.set_title(
+        f"{dataset_folder_name}\n"
+        f"Rotation = {rotation_angle['value']:.2f} degrees"
+    )
+
+    ax.axis("off")
+
+    slider_ax = fig.add_axes([0.20, 0.10, 0.50, 0.03])
+    rotation_slider = Slider(
+        slider_ax,
+        "Rotation",
+        -360.0,
+        360.0,
+        valinit=0.0,
+        valstep=0.1
+    )
+
+    def update_rotation(value):
+        rotation_angle["value"] = float(value)
+
+        rotated_image = apply_preview_rotation(
+            oriented_image,
+            rotation_angle["value"]
+        )
+
+        ax.clear()
+        ax.set_facecolor("black")
+        ax.imshow(
+            rotated_image, 
+            cmap="gray", 
+            aspect="equal",
+            extent = [
+                display_center - rotated_image.shape[1] / 2,
+                display_center + rotated_image.shape[1] / 2,
+                display_center + rotated_image.shape[0] / 2,
+                display_center - rotated_image.shape[0] / 2,
+            ],
+            zorder=1
+
+        )
+
+        ax.set_xlim(0, display_size)
+        ax.set_ylim(display_size, 0)
+        ax.add_patch(
+            Rectangle(
+                (0, 0),
+                display_size,
+                display_size,
+                facecolor="black",
+                zorder=0
+            )
+        )
+
+        ax.axhline(display_center, color="red", linewidth=0.8, zorder=2)
+        ax.axvline(display_center, color="red", linewidth=0.8, zorder=2)
+        ax.set_title(
+            f"{dataset_folder_name}\n"
+            f"Rotation = {rotation_angle['value']:.2f} degrees"
+        )
+        ax.axis("off")
+        fig.canvas.draw_idle()
+
+    rotation_slider.on_changed(update_rotation)
+
+    minus_ax = fig.add_axes([0.82, 0.085, 0.035, 0.05])
+    minus_button = Button(minus_ax, "-")
+
+    plus_ax = fig.add_axes([0.86, 0.085, 0.035, 0.05])
+    plus_button = Button(plus_ax, "+")
+
+    def decrease_rotation(event):
+        rotation_slider.set_val(rotation_slider.val - 0.1)
+
+    def increase_rotation(event):
+        rotation_slider.set_val(rotation_slider.val + 0.1)
+
+    minus_button.on_clicked(decrease_rotation)
+    plus_button.on_clicked(increase_rotation)
+
+    accept_ax = fig.add_axes([0.45, 0.005, 0.10, 0.04])
+    accept_button = Button(accept_ax, "Accept")
+
+    def accept_rotation(event):
+        plt.close(fig)
+
+    accept_button.on_clicked(accept_rotation)
+
+    plt.show(block=True)
+
+    return rotation_angle["value"]
+
     
     
-def collect_crop_bounds(image):
+def collect_crop_bounds(image, dataset_folder_name):
     """
     Let the user click two opposite corners and return row/column crop bounds.
     """
@@ -708,12 +855,15 @@ def collect_crop_bounds(image):
     print("Click two opposite corners around the area you want to keep.")
     print("For example: upper-left and lower-right.")
     print("After selecting two corners, close the image window.")
-    print("A crop preview will appear for confirmation.")
+    print("A crop preview will automatically appear for confirmation.")
     print()
 
     fig, ax = plt.subplots()
     ax.imshow(image, cmap="gray")
-    ax.set_title("Click two opposite crop corners, then close this window.")
+    ax.set_title(
+        f"{dataset_folder_name}\n"
+        "Click two opposite crop corners, then close this window."
+    )
     ax.axis("off")
 
     clicks = []
@@ -735,14 +885,18 @@ def collect_crop_bounds(image):
         ax.plot(x, y, "ro")
         fig.canvas.draw_idle()
 
-        print(f"Crop corner {len(clicks)}/2: x={x}, y={y}")
+        print()
+        if len(clicks) == 1:
+            print(f"First crop corner: x={x}, y={y}")
+        else:
+            print(f"Second crop corner: x={x}, y={y}")
 
     fig.canvas.mpl_connect("button_press_event", on_crop_corner_click)
     plt.show(block=False)
     
     input(
         "Click two crop corners in the image window. "
-        "After both clicks appear, close the image window, then press Enter here..."
+        "After both clicks appear, close the image window, then press Enter here...\n"
     )
 
     plt.close(fig)
@@ -768,13 +922,13 @@ def collect_crop_bounds(image):
     return rowrng, colrng
     
     
-def update_preview(ax, fig, image, title):
+def update_preview(ax, fig, image, title, dataset_folder_name):
     """
     redraw axes when preview updates to avoid distortion.
     """
     ax.clear()
     ax.imshow(image, cmap="gray", aspect="equal")
-    ax.set_title(title)
+    ax.set_title(f"{dataset_folder_name}\n{title}")
     ax.axis("off")
     fig.canvas.draw_idle()
     plt.pause(0.1)
@@ -2829,7 +2983,7 @@ def review_dividers(
     fig, ax = plt.subplots()
 
     ax.imshow(image, cmap="gray")
-    ax.set_title(title)
+    ax.set_title(f"{dataset_folder_name}\n{title}")
 
     for r in proposed_rows:
         ax.axhline(r, color="lime", linestyle="--")

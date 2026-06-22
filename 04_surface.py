@@ -26,7 +26,6 @@ timer_04_start = timeit.default_timer()
 print()
 dataset_path = ask_existing_path(
     "What is the full path to the dataset folder you want to continue working on?\n"
-    "Please include the dataset folder itself in the path.\n"
     "This should be the same dataset folder path you gave to 00_share_data.py.\n"
     "Example:\n"
     "C:/MyProject/CT_scan_01",
@@ -52,6 +51,9 @@ subvolume_file = metadata["02_build_subvolume"]["subvolume_file"]
 zwindow = metadata["02_build_subvolume"]["zwindow"]
 
 extraction_plan_csv = metadata["03_segment"]["extraction_plan_csv"]
+
+iso = metadata["03_segment"]["surfacing_setup"]["iso"]
+padding = metadata["03_segment"]["surfacing_setup"]["padding"]
 
 
 # ============================================================
@@ -103,88 +105,6 @@ if voxel_spacing_mm is None:
 else:
     dz = voxel_spacing_mm
 
-
-# ============================================================
-# Set ISO value
-# ============================================================
-
-slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
-
-print()
-print("The next step is to set an ISO value.")
-print()
-print("An isovalue (ISO) is required to surface the scans.")
-print(
-    "An isovalue (ISO) is the grayscale threshold used to "
-    "decide which voxels belong to the specimen and which "
-    "belong to the surrounding background."
-)
-print()
-print(
-    "Voxels brighter than the threshold are treated as material "
-    "and voxels darker than the threshold are treated as background "
-)
-print()
-print(
-    "Lower isovalues include more voxels and may capture additional specimen detail, "
-    "but can also introduce more noise. "
-    "Higher isovalues include fewer voxels and may reduce noise, "
-    "but can remove real specimen structure."
-)
-print()
-print(
-    "We can help estimate a starting isovalue, or you can enter a value "
-    "yourself."
-)
-print()
-
-use_iso_helper = ask_yes_no(
-    "Would you like help estimating a baseline isovalue?\n"
-    "The helper will ask you to click several obvious background/air points\n"
-    "and several obvious specimen/material points, then estimate a specimen-weighted\n"
-    "isovalue from their average grayscale values.\n"
-    "Choose no if you already know the isovalue you want to test.",
-    default="y"
-)
-
-if use_iso_helper:
-
-    preview_image = prepare_iso_preview_image(
-        slice_files=slice_files,
-        slice_index_fraction=slice_index_fraction,
-        transpose_preview=transpose_preview,
-        rotation_angle=rotation_angle,
-        rowrng=rowrng,
-        colrng=colrng
-    )
-
-    iso, iso_helper_metadata = estimate_iso_from_click_samples(
-        preview_image
-    )
-
-else:
-
-    iso = ask(
-        "What isovalue would you like to use for this surfacing run?",
-        cast=float
-    )
-
-    iso_helper_metadata = None
-
-# ============================================================
-# Set padding
-# ============================================================
-
-print()
-padding = ask(
-    "Padding adds a small margin around each extracted specimen box.\n"
-    "This helps avoid cutting off specimen edges if the extraction boundaries are slightly tight.\n"
-    "The unit is voxels.\n"
-    "Press Enter to use the recommended default of 5 voxels.\n"
-    "Enter a larger value to include more surrounding material, or a smaller value if you want tighter specimen crops.",
-    default=5,
-    cast=int
-)
 
 # ============================================================
 # Set parallelization
@@ -383,8 +303,6 @@ n_meshes_generated = len([
     if f.lower().endswith(".ply")
 ])
 
-iso_method = "iso_helper" if use_iso_helper else "manual_entry"
-
 surfacing_timer_stop = timeit.default_timer()
 timer_04_stop = timeit.default_timer()
 
@@ -426,13 +344,6 @@ metadata["04_surface"] = {
     "n_specimens_extracted": n_specimens_extracted,
     "n_meshes_generated": n_meshes_generated,
     "n_surfacing_errors": n_surfacing_errors,
-
-    "surfacing_parameters": {
-        "iso": iso,
-        "iso_method": iso_method,
-        "iso_helper": iso_helper_metadata,
-        "padding": padding,
-    },
 
     "parallelization": {
         "extract_num_cores": extract_num_cores,

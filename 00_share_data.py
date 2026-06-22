@@ -32,7 +32,7 @@ print()
 
 print()
 dataset_folder_name = ask_dataset_folder_name(
-    "What is the name of the dataset folder where we can find the scan data we will be processing today?\n"
+    "What is the name of the folder where we can find the scan dataset we will be processing today?\n"
     "Example:\n"
     "CT_scan_01\n"
     "This folder name is used to name workflow outputs. \n"
@@ -42,7 +42,7 @@ dataset_folder_name = ask_dataset_folder_name(
 print()
 scanpath = ask_existing_path(
     "What is the entire path to the folder for this scan dataset?\n"
-    "Please include the dataset folder itself in the path.\n"
+    "Please include the dataset folder name itself in the path.\n"
     "Example:\n"
     "C:/MyProject/CT_scan_01 \n"
     "You will be asked for this filepath again in subsequent workflow steps, so keep it handy. \n",
@@ -177,9 +177,8 @@ print(output_path)
 print()
 
 print(
-    "Thank you for sharing your data. \n"
-    "The next step will ask you to look at a representative slice from your slice folder, \n"
-    "compare that to the layout CSV, \n"
+    "Now you need to choose a repesesntative slice from the slice folder for previewing. \n" 
+    "The next step in the workflow will ask you to compare that slice to the layout CSV, \n"
     "and then based on what you see, select a few settings."
 )
 
@@ -252,6 +251,8 @@ save_metadata(metadata_path, metadata)
 # Confirm completion
 # ============================================================
 
+print()
+print("Thank you for sharing the data.")
 print()
 print("Setup complete.")
 print(f"Metadata saved to:")

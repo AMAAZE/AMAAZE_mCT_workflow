@@ -27,7 +27,6 @@ timer_05_start = timeit.default_timer()
 
 dataset_path = ask_existing_path(
     "What is the full path to the dataset folder you want to continue working on?\n"
-    "Please include the dataset folder itself in the path.\n"
     "This should be the same dataset folder path you gave to 00_share_data.py.\n"
     "Example:\n"
     "C:/MyProject/CT_scan_01",

@@ -33,7 +33,6 @@ timer_03_start = timeit.default_timer()
 print()
 dataset_path = ask_existing_path(
     "What is the full path to the dataset folder you want to continue working on?\n"
-    "Please include the dataset folder itself in the path.\n"
     "This should be the same dataset folder path you gave to 00_share_data.py.\n"
     "Example:\n"
     "C:/MyProject/CT_scan_01",
@@ -44,6 +43,7 @@ metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
 # Extract data from metadata file needed for this workflow
+slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
 output_path = metadata["00_share_data"]["output_path"]
 layoutfile = metadata["00_share_data"]["layoutfile"]
 
@@ -130,6 +130,13 @@ tier_ids = np.array(sorted(layout_by_tier.keys()))
 tier_mask = np.array([np.any(layout_by_tier[t]["mask"]) for t in tier_ids])
 
 # ============================================================
+# Prepare diagnostic figure output folder
+# ============================================================
+
+diagnostic_figures_path = os.path.join(output_path, "03_diagnostic_figures")
+os.makedirs(diagnostic_figures_path, exist_ok=True)
+
+# ============================================================
 # Tier Division
 # ============================================================
 # This step operates in reduced .npz space.
@@ -196,29 +203,6 @@ print()
 print("Edge detection diagnostics")
 print(f"left_edge:  {left_edge}")
 print(f"right_edge: {right_edge}")
-
-left_runs = get_monotonic_runs(shifted_mean_intensity_profile_z)
-right_runs = get_monotonic_runs(shifted_mean_intensity_profile_z[::-1])
-
-print()
-print("First 8 left-edge monotonic runs")
-for run in left_runs[:8]:
-    print(run)
-
-print()
-print("First 8 right-edge monotonic runs, shown in reversed-profile coordinates")
-for run in right_runs[:8]:
-    print(run)
-print()
-
-############
-
-#fig = plt.figure()
-#plt.plot(np.arange(len(shifted_mean_intensity_profile_z)), mean_intensity_profile_z)
-#plt.xlabel('slice height (z)'); plt.ylabel('(-) average tier density'); plt.title('tier segmentation')
-#
-#for vvv in suggested_tier_boundaries:
-#    plt.axvline(x=vvv, color='green', linestyle='--', linewidth=2)
 
 z_reduced = np.arange(len(mean_intensity_profile_z))
 
@@ -341,7 +325,10 @@ if len(tier_preview_images) == 1:
 
 for i, tier_image in enumerate(tier_preview_images):
     axs[i].imshow(tier_image, cmap="gray")
-    axs[i].set_title(f"Detected tier {i + 1}\nz={ranges[i][0]}:{ranges[i][1]}")
+    axs[i].set_title(
+        f"Detected tier: {i + 1} of {len(tier_preview_images)}\n"
+        f"Slices {ranges[i][0]}-{ranges[i][1]}"
+    )
     axs[i].axis("off")
 
 plt.suptitle(
@@ -571,32 +558,6 @@ for i, normalized_image in enumerate(normalized_tier_images):
     Current values were selected empirically during development.
     Review across additional datasets.
     """
-
-#    row_threshold_table = build_initial_threshold_table(row_occupancy)
-#    row_plausibility_table, row_plausible_regions, row_lowest_plausible_region = identify_plausible_regions(
-#        row_threshold_table,
-#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_rows"] - 1
-#    )
-#
-#    row_min_fraction = identify_occupancy_threshold(
-#        occupancy=row_occupancy,
-#        lowest_plausible_region=row_lowest_plausible_region,
-#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_rows"] - 1,
-#        fine_step=0.01,
-#    )
-#
-#    col_threshold_table = build_initial_threshold_table(col_occupancy)
-#    col_plausibility_table, col_plausible_regions, col_lowest_plausible_region = identify_plausible_regions(
-#        col_threshold_table,
-#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_cols"] - 1
-#    )
-#
-#    col_min_fraction = identify_occupancy_threshold(
-#        occupancy=col_occupancy,
-#        lowest_plausible_region=col_lowest_plausible_region,
-#        expected_n_dividers=layout_by_tier[int(active_tier_ids[i])]["n_cols"] - 1,
-#        fine_step=0.01,
-#    )
 
     row_centers, row_pairs, row_occupancy, row_candidates, row_candidate_bands, row_band_centers = paired_edge_centerlines(
         dark_mask,
@@ -912,6 +873,66 @@ n_extraction_regions = len(extraction_rows)
 timer_03_stop = timeit.default_timer()
 
 # ============================================================
+# Prepare dataset for surfacing
+# ============================================================
+
+print()
+print("Segmentation is complete and the extraction plan has been created.")
+print()
+print(
+    "The next questions establish the dataset-specific surfacing settings\n"
+    "that will be used by 04_surface.py."
+)
+
+# ============================================================
+# Set ISO value
+# ============================================================
+
+
+print()
+print("The first setting needed is the ISO value.")
+print()
+print("An isovalue (ISO) is required to surface the scans.")
+print(
+    "An isovalue (ISO) is the grayscale threshold used to "
+    "decide which voxels belong to the specimen and which "
+    "belong to the surrounding background."
+)
+print()
+print(
+    "Voxels brighter than the threshold are treated as material "
+    "and voxels darker than the threshold are treated as background "
+)
+print()
+print(
+    "Lower isovalues include more voxels and may capture additional specimen detail, "
+    "but can also introduce more noise. "
+    "Higher isovalues include fewer voxels and may reduce noise, "
+    "but can remove real specimen structure."
+)
+print()
+
+iso = ask(
+    "What isovalue would you like to use for this surfacing run?",
+    cast=float
+)
+
+# ============================================================
+# Set padding
+# ============================================================
+
+print()
+padding = ask(
+    "Padding adds a small margin around each extracted specimen box.\n"
+    "This helps avoid cutting off specimen edges if the extraction boundaries are slightly tight.\n"
+    "The unit is voxels.\n"
+    "Press Enter to use the recommended default of 5 voxels.\n"
+    "Enter a larger value to include more surrounding material, or a smaller value if you want tighter specimen crops.",
+    default=5,
+    cast=int
+)
+
+# ============================================================
 # Calculate runtimes
 # ============================================================
 
@@ -955,6 +976,11 @@ metadata["03_segment"] = {
     "divider_review": {
         "review_method": "automated_proposal_with_manual_override",
         "tier_divider_definitions": tier_divider_definitions,
+    },
+
+    "surfacing_setup": {
+        "iso": iso,
+        "padding": padding,
     },
 
     "runtime_seconds": runtime_03_seconds,

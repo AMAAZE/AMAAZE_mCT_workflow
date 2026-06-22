@@ -25,7 +25,6 @@ timer_01_start = timeit.default_timer()
 print()
 dataset_path = ask_existing_path(
     "What is the full path to the dataset folder you want to continue working on?\n"
-    "Please include the dataset folder itself in the path.\n"
     "This should be the same dataset folder path you gave to 00_share_data.py.\n"
     "Example:\n"
     "C:/MyProject/CT_scan_01",
@@ -35,6 +34,7 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
+dataset_folder_name = metadata["00_share_data"]["dataset_folder_name"]
 scanpath = metadata["00_share_data"]["scanpath"]
 slicepath = metadata["00_share_data"]["slicepath"]
 output_path = metadata["00_share_data"]["output_path"]
@@ -64,7 +64,13 @@ oriented_image = apply_preview_orientation(raw_image, transpose_preview)
 
 fig, ax = plt.subplots()
 plt.show(block=False)
-update_preview(ax, fig, oriented_image, f"Representative slice | transpose_preview={transpose_preview}")
+update_preview(
+    ax, 
+    fig, 
+    oriented_image, 
+    f"Representative slice | transpose_preview={transpose_preview}",
+    dataset_folder_name
+)
 
 while True:
 
@@ -80,58 +86,84 @@ while True:
 
     oriented_image = apply_preview_orientation(raw_image, transpose_preview)
 
-    update_preview(ax, fig, oriented_image, f"Representative slice | transpose_preview={transpose_preview}")
+    update_preview(ax, 
+        fig, 
+        oriented_image, 
+        f"Representative slice | transpose_preview={transpose_preview}",
+    dataset_folder_name
+    )
 
     satisfied = ask_yes_no(
-        "Does this orientation look correct relative to the layout CSV?",
+        "After transposing, do the rows and columns appear correct relative to the layout CSV?",
         default="y"
     )
 
     if satisfied:
         break
 
+    plt.close(fig)
 
 # ============================================================
-# Set rotation
+# Set rotation (New interactive version)
 # ============================================================
 
-rotation_angle = 0.0
+rotation_angle = choose_rotation_angle_interactively(
+    oriented_image,
+    dataset_folder_name
+)
 
-while True:
+rotated_image = apply_preview_rotation(
+    oriented_image,
+    rotation_angle
+)
 
-    print()
-    print("The next step is rotation.")
-    print("Positive values rotate counterclockwise.")
-    print("Negative values rotate clockwise.")
-    print()
-
-    rotation_angle = ask(
-        "Enter a rotation angle in degrees.",
-        default=rotation_angle,
-        cast=float
-    )
-
-    rotated_image = apply_preview_rotation(
-        oriented_image,
-        rotation_angle
-    )
-
-    update_preview(ax, fig, rotated_image, f"Rotation = {rotation_angle} degrees")
-
-    satisfied = ask_yes_no(
-        "Does this rotation look correct?",
-        default="y"
-    )
-
-    if satisfied:
-        break
-
-print()
-print("Rotation accepted.")
-print("Please close the rotation preview window to continue to cropping.")
-input("Press Enter after closing the rotation preview window...")
-
-plt.close(fig)
+# ============================================================
+# Set rotation (current--hopefully soon-to-be old)
+# ============================================================
+#
+#rotation_angle = 0.0
+#
+#while True:
+#
+#    print()
+#    print("The next step is rotation.")
+#    print("Positive values rotate counterclockwise.")
+#    print("Negative values rotate clockwise.")
+#    print()
+#
+#    rotation_angle = ask(
+#        "Enter a rotation angle in degrees.",
+#        default=rotation_angle,
+#        cast=float
+#    )
+#
+#    rotated_image = apply_preview_rotation(
+#        oriented_image,
+#        rotation_angle
+#    )
+#
+#    update_preview(
+#        ax, 
+#        fig, 
+#        rotated_image, 
+#        f"Rotation = {rotation_angle} degrees",
+#    dataset_folder_name
+#    )
+#
+#    satisfied = ask_yes_no(
+#        "Does this rotation look correct?",
+#        default="y"
+#    )
+#
+#    if satisfied:
+#        break
+#
+#print()
+#print("Rotation accepted.")
+#print("Please close the rotation preview window to continue to cropping.")
+#input("Press Enter after closing the rotation preview window...")
+#
+#plt.close(fig)
 
 # ============================================================
 # Set crop
@@ -139,7 +171,7 @@ plt.close(fig)
 
 while True:
 
-    rowrng, colrng = collect_crop_bounds(rotated_image)
+    rowrng, colrng = collect_crop_bounds(rotated_image, dataset_folder_name)
     
     if rowrng is None or colrng is None:
         continue
@@ -149,9 +181,15 @@ while True:
         colrng[0]:colrng[1]
     ].copy()
 
+    print("Rotated image shape:", rotated_image.shape)
+    print("Cropped image shape:", cropped_image.shape)
+
     plt.figure()
     plt.imshow(cropped_image, cmap="gray")
-    plt.title(f"Crop preview | rows={rowrng}, cols={colrng}")
+    plt.title(
+        f"{dataset_folder_name} \n"
+        f"Crop preview | rows={rowrng}, cols={colrng}"
+    )
     plt.axis("off")
     plt.show(block=False)
 
