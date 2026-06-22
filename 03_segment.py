@@ -136,6 +136,11 @@ tier_mask = np.array([np.any(layout_by_tier[t]["mask"]) for t in tier_ids])
 diagnostic_figures_path = os.path.join(output_path, "03_diagnostic_figures")
 os.makedirs(diagnostic_figures_path, exist_ok=True)
 
+peak_diagnostics_csv = os.path.join(
+    output_path,
+    f"{dataset_folder_name}_peak_diagnostics.csv"
+)
+
 # ============================================================
 # Tier Division
 # ============================================================
@@ -169,23 +174,6 @@ vert_pks, peak_props, boundary_scores = generate_tier_boundary_candidates(
     n_tiers
 )
 
-#########
-print()
-print("Tier-boundary candidate peak diagnostics")
-print("index | location | prominence | width | score | left_base | right_base")
-
-for i, peak in enumerate(vert_pks):
-    print(
-        f"{i:>5} | "
-        f"{int(peak):>5} | "
-        f"{peak_props['prominences'][i]:>10.2f} | "
-        f"{peak_props['widths'][i]:>10.2f} | "
-        f"{boundary_scores[i]:>10.2f} | "
-        f"{int(peak_props['left_bases'][i]):>9} | "
-        f"{int(peak_props['right_bases'][i]):>10}"
-    )
-print()
-
 tier_boundary_result = select_tier_boundaries_by_edge_and_score(
     shifted_mean_intensity_profile_z,
     candidate_peaks=vert_pks,
@@ -198,11 +186,6 @@ suggested_tier_boundaries = tier_boundary_result["selected_boundaries"]
 left_edge = tier_boundary_result["left_edge"]
 right_edge = tier_boundary_result["right_edge"]
 selected_internal = tier_boundary_result["selected_internal"]
-
-print()
-print("Edge detection diagnostics")
-print(f"left_edge:  {left_edge}")
-print(f"right_edge: {right_edge}")
 
 z_reduced = np.arange(len(mean_intensity_profile_z))
 
@@ -298,6 +281,16 @@ else:
     ex = suggested_tier_boundaries
     tier_detection_method = "automatic_peaks"
     print("using ", ex)
+
+print()
+print("Tier boundary selection summary")
+print(f"Detected left edge:      {left_edge}")
+print(f"Detected right edge:     {right_edge}")
+print(f"Detected internal:       {selected_internal}")
+print(f"Suggested boundaries:    {suggested_tier_boundaries}")
+print(f"Selection method:        {tier_detection_method}")
+print(f"Final boundaries used:   {ex}")
+print()
 
 tier_segmentation = {}
 
@@ -438,8 +431,8 @@ for i in range(len(I)):
 """
 Divider detection operates on the mean projection of each active tier.
 
-A local stability image is computed to emphasize specimen and divider
-boundaries while suppressing much of the internal texture. The stability
+A local homogeneity image is computed to emphasize specimen and divider
+boundaries while suppressing much of the internal texture. The homogeneity
 image is thresholded and converted into row- and column-wise occupancy
 profiles.
 
@@ -449,7 +442,7 @@ paired according to plausible divider widths, and converted into divider
 centerlines.
 
 Diagnostic plots are generated to visualize:
-1. The stability image.
+1. The homogeneity image.
 2. Candidate divider edges.
 3. Paired divider edges.
 4. Final divider centerlines.
@@ -459,6 +452,8 @@ regions for downstream processing.
 """
 
 divider_proposals = []
+diagnostic_rows = []
+diagnostic_cols = []
 
 for i, normalized_image in enumerate(normalized_tier_images):
 
@@ -467,7 +462,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
     and percentile_high=98 heuristic parameters.
 
     Smaller windows produce sharper local edge responses.
-    Larger windows broaden the stability halos and may merge
+    Larger windows broaden the homogeneity halos and may merge
     nearby features.
 
     Values below the 2nd percentile and above the 98th percentile
@@ -482,7 +477,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
     """
     stability_window = 3
 
-    stability_image = local_stability_image(
+    homogeneity_image = local_homogeneity_image(
         normalized_image,
         window_size=stability_window,
         percentile_low=2,
@@ -507,36 +502,55 @@ for i, normalized_image in enumerate(normalized_tier_images):
     development. Review across additional datasets.
     """
 
-    cutoff = np.percentile(stability_image, 20)
-    dark_mask = stability_image < cutoff
+    cutoff = np.percentile(homogeneity_image, 20)
+    dark_mask = homogeneity_image < cutoff
     row_occupancy, col_occupancy = compute_occupancy_profiles(dark_mask)
 
-    #row_min_fraction = 0.25
-    row_min_fraction = estimate_occupancy_threshold_by_peak_distance(row_occupancy)[0]
-    row_prominence_peaks = estimate_occupancy_threshold_by_peak_distance(row_occupancy)[1]
+    row_min_fraction, row_prominence_peaks = (
+        estimate_occupancy_threshold_by_peak_distance(row_occupancy)
+    )
 
-    #col_min_fraction = 0.25
-    col_min_fraction = estimate_occupancy_threshold_by_peak_distance(col_occupancy)[0]
-    col_prominence_peaks = estimate_occupancy_threshold_by_peak_distance(col_occupancy)[1]
-
-    print()
-    print("=" * 60)
-    print(f"Tier {i + 1} prominence threshold test")
-
-    print()
-    print(f"ROW threshold = {row_min_fraction}")
+    col_min_fraction, col_prominence_peaks = (
+        estimate_occupancy_threshold_by_peak_distance(col_occupancy)
+    )
 
     for peak in row_prominence_peaks:
-        print(peak)
-
-    print()
-    print(f"COL threshold = {col_min_fraction}")
+        diagnostic_rows.append({
+            "tier": int(active_tier_ids[i]),
+            "row_or_col": "row",
+            "peak_index": peak["peak_index"],
+            "peak_value": peak["peak_value"],
+            "prominence": peak["prominence"],
+            "status": peak["status"],
+            "nearest_retained_distance": peak.get(
+                "nearest_retained_distance",
+                np.nan
+            ),
+            "stop_reason": peak.get(
+                "stop_reason",
+                ""
+            ),
+        })
 
     for peak in col_prominence_peaks:
-        print(peak)
 
-    print("=" * 60)
-    print()
+        diagnostic_cols.append({
+            "tier": int(active_tier_ids[i]),
+            "row_or_col": "col",
+            "peak_index": peak["peak_index"],
+            "peak_value": peak["peak_value"],
+            "prominence": peak["prominence"],
+            "status": peak["status"],
+            "nearest_retained_distance": peak.get(
+                "nearest_retained_distance",
+                np.nan
+            ),
+            "stop_reason": peak.get(
+                "stop_reason",
+                ""
+            ),
+        }
+    )
 
 
     """
@@ -654,9 +668,9 @@ for i, normalized_image in enumerate(normalized_tier_images):
     axs[0, 0].axis("off")
 
 
-    # Stability image
-    axs[0, 1].imshow(stability_image, cmap="gray")
-    axs[0, 1].set_title(f"Tier {i+1}: stability image")
+    # homogeneity image
+    axs[0, 1].imshow(homogeneity_image, cmap="gray")
+    axs[0, 1].set_title(f"Tier {i+1}: local homogeneity image")
     axs[0, 1].axis("off")
 
     # Dark mask
@@ -742,6 +756,15 @@ for i, normalized_image in enumerate(normalized_tier_images):
         "review_choice": review_choice.strip().lower()
     })
 
+peak_diagnostics_df = pd.DataFrame(
+    diagnostic_rows + diagnostic_cols
+)
+
+peak_diagnostics_df.to_csv(
+    peak_diagnostics_csv,
+    index=False
+)
+
 # ============================================================
 # Divider review / correction layer
 # ============================================================
@@ -794,21 +817,32 @@ for i, normalized_image in enumerate(normalized_tier_images):
             title=f"Tier {tier_id}: divider review"
         )
                 
-    tier_divider_definitions.append({
-        "tier_id": tier_id,
-        "proposed_row_dividers": proposed_rows.tolist(),
-        "proposed_col_dividers": proposed_cols.tolist(),
-        "final_row_dividers": final_rows.tolist(),
-        "final_col_dividers": final_cols.tolist(),
-        "divider_method": (
-            "automatic_accepted"
-            if np.array_equal(final_rows, proposed_rows)
-            and np.array_equal(final_cols, proposed_cols)
-            else "manual_override"
-        ),
-    })
+    divider_method = 
+        "automatic_accepted"
+        if np.array_equal(final_rows, proposed_rows)
+        and np.array_equal(final_cols, proposed_cols)
+        else "manual_override"
+    )
 
+})
     
+    print()
+    print(f"Tier {tier_id} divider selection summary")
+    print(f"Proposed row dividers:   {proposed_rows}")
+    print(f"Proposed col dividers:   {proposed_cols}")
+    print(f"Selection method:        {divider_method}")
+    print(f"Final row dividers used: {final_rows}")
+    print(f"Final col dividers used: {final_cols}")
+    print()
+
+    tier_divider_definitions.append({
+    "tier_id": tier_id,
+    "proposed_row_dividers": proposed_rows.tolist(),
+    "proposed_col_dividers": proposed_cols.tolist(),
+    "final_row_dividers": final_rows.tolist(),
+    "final_col_dividers": final_cols.tolist(),
+    "divider_method": divider_method,
+
 # ============================================================
 # Write extraction plan for surfacing
 # ============================================================
@@ -869,6 +903,7 @@ n_active_tiers = len(active_tier_ids)
 n_expected_specimens = int(np.sum([np.sum(layout_by_tier[t]["mask"]) for t in layout_by_tier]))
 n_extracted_specimens = len(extraction_rows)
 n_extraction_regions = len(extraction_rows)
+
 
 timer_03_stop = timeit.default_timer()
 
@@ -976,6 +1011,7 @@ metadata["03_segment"] = {
     "divider_review": {
         "review_method": "automated_proposal_with_manual_override",
         "tier_divider_definitions": tier_divider_definitions,
+        "peak_diagnostics_csv": peak_diagnostics_csv,
     },
 
     "surfacing_setup": {

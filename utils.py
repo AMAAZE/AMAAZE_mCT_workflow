@@ -2321,9 +2321,9 @@ def estimate_grid_rotation_by_coherence(im, angle_min=-5, angle_max=5, angle_ste
     return best_angle, angles, scores
 
 
-def local_stability_image(image, window_size=5, percentile_low=2, percentile_high=98):
+def local_homogeneity_image(image, window_size=5, percentile_low=2, percentile_high=98):
     """
-    Create a local-stability image.
+    Create a local-homogeneity image.
 
     Low local standard deviation = high stability.
     Percentile stretch improves visual contrast.
