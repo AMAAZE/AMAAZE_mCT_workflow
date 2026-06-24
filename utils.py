@@ -161,6 +161,44 @@ def format_runtime(seconds):
     hours = minutes / 60
     return f"{hours:.2f} hr"
 
+def unpack_metadata(metadata):
+    step00 = metadata.get("00_share_data", {})
+    step01 = metadata.get("01_set_rotation_crop", {})
+    step02 = metadata.get("02_build_subvolume", {})
+    step03 = metadata.get("03_segment", {})
+    step04 = metadata.get("04_surface", {})
+    step05 = metadata.get("05_clean_meshes", {})
+
+    return {
+        "dataset_folder_name": step00.get("dataset_folder_name"),
+        "scanpath": step00.get("scanpath"),
+        "slicepath": step00.get("slicepath"),
+        "layoutfile": step00.get("layoutfile"),
+        "output_path": step00.get("output_path"),
+        "metadata_path": step00.get("metadata_path"),
+
+        "slice_index_fraction": step00.get("slice_index_fraction"),
+        "voxel_size_mm": step00.get("voxel_size_mm"),
+        "voxel_spacing_mm": step00.get("voxel_spacing_mm"),
+
+        "transpose_preview": step01.get("transpose_preview"),
+        "rotation_angle": step01.get("rotation_angle"),
+        "rowrng": step01.get("rowrng"),
+        "colrng": step01.get("colrng"),
+
+        "subvolume_file": step02.get("subvolume_file"),
+        "zwindow": step02.get("zwindow"),
+
+        "extraction_plan_csv": step03.get("extraction_plan_csv"),
+        "iso": step03.get("surfacing_setup", {}).get("iso"),
+        "padding": step03.get("surfacing_setup", {}).get("padding"),
+
+        "mesh_folder": step04.get("mesh_folder"),
+        "clean_mesh_folder": step05.get("clean_mesh_folder"),
+    }
+
+
+
 def write_final_run_report(metadata):
     """
     Fill the final run report template and write a timestamped PDF report
@@ -371,7 +409,7 @@ def find_metadata_file_in_dataset(dataset_path):
 
             if (
                 os.path.isdir(candidate)
-                and fname.endswith("_outputs")
+                and "outputs" in fname.lower()
             ):
                 output_folders.append(candidate)
 
@@ -575,7 +613,41 @@ def ask_float_in_range(prompt, minimum, maximum, default=None):
         )
         print()
           
-    
+def ask_run_next_step(next_script, scanpath, metadata_path):
+    """
+    Ask whether to immediately launch the next workflow script.
+    """
+    print()
+    run_next = ask_yes_no(
+        f"Would you like to automatically start the next step now?\n"
+        f"Next step: python {next_script}",
+        default="y"
+    )
+
+    if run_next:
+        print()
+        print(f"Starting {next_script}...")
+        print()
+        subprocess.run(
+            [
+                "python",
+                next_script,
+                "--metadata_path",
+                metadata_path,
+            ],
+            check=True
+    else:
+        print()
+        print("Workflow paused.")
+        print()
+        print("To continue later, return to this workflow folder and run:")
+        print(f"python {next_script}")
+        print()
+        print("When prompted, use this dataset folder path:")
+        print(scanpath)
+        print()
+
+ 
 # ============================================================
 # 00_SHARE_DATA.PY HELPERS
 # Metadata creation and initialization.
@@ -1003,7 +1075,9 @@ def estimate_occupancy_threshold_by_peak_distance(
     )
 
     if len(peaks) == 0:
-        return None, []
+        return None, None, 0, 0, []
+
+    all_peak_counts = len(peaks)
 
     prominences = np.asarray(peak_props["prominences"]).astype(float)
     peak_values = occupancy[peaks]
@@ -1021,7 +1095,7 @@ def estimate_occupancy_threshold_by_peak_distance(
     retained_peak_values = peak_values[keep_order]
 
     if len(retained_peaks) == 0:
-        return None, []
+        return None, None, all_peak_counts, 0, []
 
     starting_threshold = float(occupancy[retained_peaks[0]])
     previous_threshold = starting_threshold
@@ -1059,42 +1133,63 @@ def estimate_occupancy_threshold_by_peak_distance(
                     f"{nearest_retained_distance:.1f} pixels from nearest retained peak"
                 )
 
+                final_threshold = float(previous_threshold)
+
+                retained_threshold_peaks = np.sum(
+                    peak_values >= final_threshold
+                )
+
                 peak_summaries = []
 
-                for peak, prom in zip(retained_peaks, retained_prominences):
+                for peak, prom in zip(peaks, prominences):
                     peak_summaries.append({
                         "peak_index": int(peak),
                         "peak_value": float(occupancy[peak]),
                         "prominence": float(prom),
-                        "status": "retained",
+                        "retained_by_prominence": bool(peak in retained_peaks),
+                        "retained_by_final_threshold": bool(
+                            occupancy[peak] >= final_threshold
+                            ),
+                        "stopping_peak": False,
                     })
 
-                peak_summaries.append({
-                    "peak_index": int(new_peak),
-                    "peak_value": float(occupancy[new_peak]),
-                    "prominence": float(prominences[np.where(peaks == new_peak)[0][0]]),
-                    "nearest_retained_distance": nearest_retained_distance,
-                    "status": "stopped_threshold",
-                    "stop_reason": stop_reason,
-                })
+   
+                for peak_summary in peak_summaries:
+                    if peak_summary["peak_index"] == int(new_peak):
+                        peak_summary["stopping_peak"] = True
+                        peak_summary["nearest_retained_distance"] = nearest_retained_distance
+                        peak_summary["stop_reason"] = stop_reason
+                        break
 
-                return float(previous_threshold), peak_summaries
+                return starting_threshold, final_threshold, all_peak_counts, retained_threshold_peaks, peak_summaries
 
         previous_visible_peaks = current_visible_peaks
         previous_threshold = threshold
         threshold -= threshold_step
 
+
+    final_threshold = float(previous_threshold)
+
+    retained_threshold_peaks = np.sum(
+        peak_values >= final_threshold
+    )
+
     peak_summaries = []
 
-    for peak, prom in zip(retained_peaks, retained_prominences):
+    for peak, prom in zip(peaks, prominences):
         peak_summaries.append({
             "peak_index": int(peak),
             "peak_value": float(occupancy[peak]),
             "prominence": float(prom),
-            "status": "retained",
-        })
+            "retained_by_prominence": bool(peak in retained_peaks),
+            "retained_by_final_threshold": bool(
+                occupancy[peak] >= final_threshold
+                ),
+            "stopping_peak": False,
+    })
 
-    return final_threshold, peak_summaries
+
+    return starting_threshold, final_threshold, all_peak_counts, retained_threshold_peaks, peak_summaries
 
 
 
@@ -2983,7 +3078,7 @@ def review_dividers(
     fig, ax = plt.subplots()
 
     ax.imshow(image, cmap="gray")
-    ax.set_title(f"{dataset_folder_name}\n{title}")
+    ax.set_title(f"{ask_dataset_folder_name}\n{title}")
 
     for r in proposed_rows:
         ax.axhline(r, color="lime", linestyle="--")

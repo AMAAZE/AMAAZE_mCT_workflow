@@ -34,11 +34,22 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
-dataset_folder_name = metadata["00_share_data"]["dataset_folder_name"]
-scanpath = metadata["00_share_data"]["scanpath"]
-slicepath = metadata["00_share_data"]["slicepath"]
-output_path = metadata["00_share_data"]["output_path"]
-slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
+(
+    dataset_folder_name,
+    scanpath,
+    slicepath,
+    layoutfile,
+    output_path,
+    metadata_path,
+    slice_index_fraction,
+    voxel_size_mm,
+    voxel_spacing_mm,
+    transpose_preview,
+    rotation_angle,
+    rowrng,
+    colrng,
+    subvolume_file,
+) = unpack_metadata(metadata)
 
 # ============================================================
 # Load slices and identify representative slice
@@ -117,53 +128,6 @@ rotated_image = apply_preview_rotation(
     rotation_angle
 )
 
-# ============================================================
-# Set rotation (current--hopefully soon-to-be old)
-# ============================================================
-#
-#rotation_angle = 0.0
-#
-#while True:
-#
-#    print()
-#    print("The next step is rotation.")
-#    print("Positive values rotate counterclockwise.")
-#    print("Negative values rotate clockwise.")
-#    print()
-#
-#    rotation_angle = ask(
-#        "Enter a rotation angle in degrees.",
-#        default=rotation_angle,
-#        cast=float
-#    )
-#
-#    rotated_image = apply_preview_rotation(
-#        oriented_image,
-#        rotation_angle
-#    )
-#
-#    update_preview(
-#        ax, 
-#        fig, 
-#        rotated_image, 
-#        f"Rotation = {rotation_angle} degrees",
-#    dataset_folder_name
-#    )
-#
-#    satisfied = ask_yes_no(
-#        "Does this rotation look correct?",
-#        default="y"
-#    )
-#
-#    if satisfied:
-#        break
-#
-#print()
-#print("Rotation accepted.")
-#print("Please close the rotation preview window to continue to cropping.")
-#input("Press Enter after closing the rotation preview window...")
-#
-#plt.close(fig)
 
 # ============================================================
 # Set crop
@@ -226,7 +190,7 @@ metadata["01_set_rotation_crop"] = {
         "rowrng": rowrng,
         "colrng": colrng, 
     
-        "runtime_seconds": runtime_01_seconds,
+        "runtime_01_seconds": runtime_01_seconds,
 }
 
 save_metadata(metadata_path, metadata)
@@ -240,6 +204,7 @@ print("Rotation and crop setup complete.")
 print("Metadata updated:")
 print(metadata_path)
 print()
-print("Next step:")
-print("python 02_build_subvolume.py")
+
+ask_run_next_step("python 02_build_subvolume.py", scanpath, metadatapath)
+
 

@@ -42,12 +42,22 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
-# Extract data from metadata file needed for this workflow
-slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
-output_path = metadata["00_share_data"]["output_path"]
-layoutfile = metadata["00_share_data"]["layoutfile"]
-
-dataset_folder_name = metadata["00_share_data"]["dataset_folder_name"]
+(
+    dataset_folder_name,
+    scanpath,
+    slicepath,
+    layoutfile,
+    output_path,
+    metadata_path,
+    slice_index_fraction,
+    voxel_size_mm,
+    voxel_spacing_mm,
+    transpose_preview,
+    rotation_angle,
+    rowrng,
+    colrng,
+    subvolume_file,
+) = unpack_metadata(metadata)
 
 # ============================================================
 # Load subvolume (npz) from 02
@@ -161,14 +171,6 @@ shifted_mean_intensity_profile_z = (
     - mean_intensity_profile_z.min()
 )
 
-"""
-NOTE(dev): 3e7 is a magic number. Review
-"""
-#thresh = 3e7/(vol.shape[1]*vol.shape[2])
-#shifted_mean_intensity_profile_z[
-#    shifted_mean_intensity_profile_z<thresh
-#] = 0
-
 vert_pks, peak_props, boundary_scores = generate_tier_boundary_candidates(
     shifted_mean_intensity_profile_z,
     n_tiers
@@ -189,7 +191,7 @@ selected_internal = tier_boundary_result["selected_internal"]
 
 z_reduced = np.arange(len(mean_intensity_profile_z))
 
-fig, axs = plt.subplots(1, 2, figsize=(16, 5), sharey=True)
+fig_tiers, axs = plt.subplots(1, 2, figsize=(16, 4), sharey=True)
 
 axs[0].plot(
     z_reduced,
@@ -238,14 +240,24 @@ axs[1].legend(by_label.values(), by_label.keys())
 axs[1].set_xlabel("slice height (z)")
 axs[1].set_title("Suggested tier boundaries (edge-aware)")
 
-fig.suptitle(
+fig_tiers.suptitle(
     f"{dataset_folder_name} | Tier segmentation review\n"
     f"(z-window: {metadata['02_build_subvolume']['zwindow']}, "
     f"original slices: {metadata['00_share_data']['n_slices']})" 
 )
 
-plt.tight_layout()
+fig_tiers.tight_layout(rect=[0, 0, 1, 0.88])
 
+tiers_png = os.path.join(
+    diagnostic_figures_path,
+    f"{dataset_folder_name}_tier_segmentation_review.png"
+)
+
+fig_tiers.savefig(
+    tiers_png,
+    dpi=300,
+    bbox_inches="tight"
+)
 
 print(
     "\nA tier-boundary review window is opening.\n"
@@ -259,8 +271,7 @@ print(
     f"Non-empty tiers: {np.sum(tier_mask)}\n"
 )
         
-#clicked_x = collect_tier_boundary_clicks(fig, plt.gca())
-clicked_x = collect_tier_boundary_clicks(fig, axs[1])
+clicked_x = collect_tier_boundary_clicks(fig_tiers, axs[1])
 
 plt.show(block=False)        
         
@@ -269,7 +280,7 @@ input(
     "(no clicks = accept suggested boundaries).\n"
 )
 
-plt.close(fig)
+plt.close(fig_tiers)
 
 if len(clicked_x) > 0:
     ex = np.array(clicked_x).astype(int)
@@ -294,41 +305,87 @@ print()
 
 tier_segmentation = {}
 
-# Convert the selected tier boundary positions into start/end ranges.
-# Each range is one tier in the reduced .npz volume.
+# ============================================================
+# Inspect tier order
+# ============================================================
 
 ranges = [
     [ex[i], ex[i + 1]]
     for i in range(len(ex) - 1)
 ]
 
-# Scan order and layout order are not always the same.
-# If configured, reverse the detected tier order before matching
-# tiers to the layout CSV.
-# Preview detected tier order before matching tiers to layout.
-tier_preview_images = [
+tier_images = [
     vol[start:end, :, :].mean(0)
     for start, end in ranges
 ]
 
-fig, axs = plt.subplots(1, len(tier_preview_images), figsize=(5 * len(tier_preview_images), 5))
+if len(tier_images) == 1:
+    preview_images = [tier_images[0]]
+else:
+    preview_images = [tier_images[0], tier_images[-1]]
 
-if len(tier_preview_images) == 1:
+image_h, image_w = preview_images[0].shape
+aspect = image_w / image_h
+
+image_width_inches = 5
+title_space_inches = 2
+
+fig_width = image_width_inches
+fig_height = (
+    len(preview_images)
+    * image_width_inches
+    / aspect
+) + title_space_inches
+
+
+fig_tier_order, axs = plt.subplots(
+    len(preview_images),
+    1,
+    figsize=(fig_width, fig_height)
+)
+
+if len(preview_images) == 1:
     axs = [axs]
 
-for i, tier_image in enumerate(tier_preview_images):
-    axs[i].imshow(tier_image, cmap="gray")
-    axs[i].set_title(
-        f"Detected tier: {i + 1} of {len(tier_preview_images)}\n"
-        f"Slices {ranges[i][0]}-{ranges[i][1]}"
+    axs[0].imshow(preview_images[0], cmap="gray")
+    axs[0].set_title(
+        "Detected one tier only \n"
+        f"Slices {ranges[0][0]}-{ranges[0][1]}"
     )
-    axs[i].axis("off")
+    axs[0].axis("off")
 
-plt.suptitle(
+else:
+
+    axs[0].imshow(preview_images[0], cmap="gray")
+    axs[0].set_title(
+        f"Detected tier: 1 of {len(tier_images)}\n"
+        f"Slices {ranges[0][0]}-{ranges[0][1]}"
+    )
+    axs[0].axis("off")
+
+    axs[1].imshow(preview_images[1], cmap="gray")
+    axs[1].set_title(
+        f"Detected tier: {len(tier_images)} of {len(tier_images)}\n"
+        f"Slices {ranges[-1][0]}-{ranges[-1][1]}"
+    )
+    axs[1].axis("off")
+
+fig_tier_order.suptitle(
     f"{dataset_folder_name} | Detected tier order preview"
 )
 
-plt.tight_layout()
+tier_order_png = os.path.join(
+    diagnostic_figures_path,
+    f"{dataset_folder_name}_tier_order_review.png"
+)
+
+fig_tier_order.savefig(
+    tier_order_png,
+    dpi=300,
+    bbox_inches="tight"
+)
+
+fig_tier_order.tight_layout()
 
 print()
 print("A detected-tier preview window is opening.")
@@ -341,7 +398,7 @@ plt.show(block=False)
 
 input("Press Enter after closing the detected-tier preview window...")
 
-plt.close(fig)
+plt.close(fig_tier_order)
 
 reverse_detected_tier_order = ask_yes_no(
     "Do the detected tiers appear inverted relative to the layout CSV?\n"
@@ -450,7 +507,8 @@ Diagnostic plots are generated to visualize:
 The resulting divider network is used to define specimen extraction
 regions for downstream processing.
 """
-
+occupancy_profile_pngs = []
+divider_proposal_pngs = []
 divider_proposals = []
 diagnostic_rows = []
 diagnostic_cols = []
@@ -506,13 +564,9 @@ for i, normalized_image in enumerate(normalized_tier_images):
     dark_mask = homogeneity_image < cutoff
     row_occupancy, col_occupancy = compute_occupancy_profiles(dark_mask)
 
-    row_min_fraction, row_prominence_peaks = (
-        estimate_occupancy_threshold_by_peak_distance(row_occupancy)
-    )
+    row_starting_threshold, row_min_fraction, row_all_peak_counts, row_n_threshold_retained_peaks, row_prominence_peaks = (estimate_occupancy_threshold_by_peak_distance(row_occupancy))
 
-    col_min_fraction, col_prominence_peaks = (
-        estimate_occupancy_threshold_by_peak_distance(col_occupancy)
-    )
+    col_starting_threshold, col_min_fraction, col_all_peak_counts, col_n_threshold_retained_peaks, col_prominence_peaks = (estimate_occupancy_threshold_by_peak_distance(col_occupancy))
 
     for peak in row_prominence_peaks:
         diagnostic_rows.append({
@@ -521,7 +575,6 @@ for i, normalized_image in enumerate(normalized_tier_images):
             "peak_index": peak["peak_index"],
             "peak_value": peak["peak_value"],
             "prominence": peak["prominence"],
-            "status": peak["status"],
             "nearest_retained_distance": peak.get(
                 "nearest_retained_distance",
                 np.nan
@@ -530,6 +583,9 @@ for i, normalized_image in enumerate(normalized_tier_images):
                 "stop_reason",
                 ""
             ),
+            "retained_by_prominence": peak["retained_by_prominence"],
+            "retained_by_final_threshold": peak["retained_by_final_threshold"],
+            "stopping_peak": peak["stopping_peak"],
         })
 
     for peak in col_prominence_peaks:
@@ -540,7 +596,6 @@ for i, normalized_image in enumerate(normalized_tier_images):
             "peak_index": peak["peak_index"],
             "peak_value": peak["peak_value"],
             "prominence": peak["prominence"],
-            "status": peak["status"],
             "nearest_retained_distance": peak.get(
                 "nearest_retained_distance",
                 np.nan
@@ -549,6 +604,9 @@ for i, normalized_image in enumerate(normalized_tier_images):
                 "stop_reason",
                 ""
             ),
+            "retained_by_prominence": peak["retained_by_prominence"],
+            "retained_by_final_threshold": peak["retained_by_final_threshold"],
+            "stopping_peak": peak["stopping_peak"],
         }
     )
 
@@ -659,8 +717,31 @@ for i, normalized_image in enumerate(normalized_tier_images):
         fontsize=14
     )
 
+    occupancy_png = os.path.join(
+        diagnostic_figures_path,
+        f"{dataset_folder_name}_tier_{active_tier_ids[i]}_occupancy_profiles.png"
+    )
 
-    fig_dividers, axs = plt.subplots(2, 3, figsize=(24, 12))
+    fig_occupancy.savefig(
+        occupancy_png,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    occupancy_profile_pngs.append(occupancy_png)
+
+    image_h, image_w = normalized_image.shape
+    aspect = image_w / image_h
+
+    image_width = 5
+    image_height = image_width / aspect
+
+    width_spacing = 2 # 0.5 left margin + 05. right margin + 2*0.5 center spacings between the images
+    height_spacing = 3 #(0.5 top margin + 0.5 title + 0.5 space between title an first row of titles + 2*0.5 for the first row of titles + 2*0.25 for the space between the image titles and the images)
+    figure_width = (3 * image_width + width_spacing) # Do margins = left and right margins plus the space in between the two images?
+    figure_height = (2 * image_height + height_spacing)
+
+    fig_dividers, axs = plt.subplots(2, 3, figsize=(figure_width, figure_height))
 
     # Normalized image
     axs[0, 0].imshow(normalized_image, cmap="gray")
@@ -730,6 +811,19 @@ for i, normalized_image in enumerate(normalized_tier_images):
         fontsize=14
     )
 
+    dividers_png = os.path.join(
+        diagnostic_figures_path,
+        f"{dataset_folder_name}_tier_{active_tier_ids[i]}_divider_proposals.png"
+    )
+
+    fig_dividers.savefig(
+        dividers_png,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    divider_proposal_pngs.append(dividers_png)
+
     plt.tight_layout()
     plt.show(block=False)
 
@@ -751,9 +845,19 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
     divider_proposals.append({
         "tier_id": int(active_tier_ids[i]),
-        "proposed_rows": np.array(row_centers).astype(int),
-        "proposed_cols": np.array(col_centers).astype(int),
-        "review_choice": review_choice.strip().lower()
+        "proposed_rows": np.array(row_centers).astype(int).tolist(),
+        "proposed_cols": np.array(col_centers).astype(int).tolist(),
+        "review_choice": review_choice.strip().lower(),
+        "row_starting_threshold": row_starting_threshold,
+        "col_starting_threshold": col_starting_threshold,
+        "row_final_threshold": row_min_fraction,
+        "col_final_threshold": col_min_fraction,
+        "row_all_peak_count": row_all_peak_counts,
+        "col_all_peak_count": col_all_peak_counts,
+        "row_n_prominence_retained_peaks": sum(peak["retained_by_prominence"] for peak in row_prominence_peaks),
+        "col_n_prominence_retained_peaks": sum(peak["retained_by_prominence"] for peak in col_prominence_peaks),
+        "row_n_threshold_retained_peaks": row_n_threshold_retained_peaks,
+        "col_n_threshold_retained_peaks": col_n_threshold_retained_peaks,    
     })
 
 peak_diagnostics_df = pd.DataFrame(
@@ -801,7 +905,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
         accepted_cols = len(final_cols) + 1
 
         if accepted_rows == expected_rows and accepted_cols == expected_cols:
-                break
+            break
 
         print()
         print("The accepted dividers do not match the layout.")
@@ -817,15 +921,13 @@ for i, normalized_image in enumerate(normalized_tier_images):
             title=f"Tier {tier_id}: divider review"
         )
                 
-    divider_method = 
+    divider_method = (
         "automatic_accepted"
         if np.array_equal(final_rows, proposed_rows)
         and np.array_equal(final_cols, proposed_cols)
         else "manual_override"
-    )
+    )    
 
-})
-    
     print()
     print(f"Tier {tier_id} divider selection summary")
     print(f"Proposed row dividers:   {proposed_rows}")
@@ -836,12 +938,13 @@ for i, normalized_image in enumerate(normalized_tier_images):
     print()
 
     tier_divider_definitions.append({
-    "tier_id": tier_id,
-    "proposed_row_dividers": proposed_rows.tolist(),
-    "proposed_col_dividers": proposed_cols.tolist(),
-    "final_row_dividers": final_rows.tolist(),
-    "final_col_dividers": final_cols.tolist(),
-    "divider_method": divider_method,
+        "tier_id": tier_id,
+        "proposed_row_dividers": proposed_rows,
+        "proposed_col_dividers": proposed_cols,
+        "final_row_dividers": final_rows.tolist(),
+        "final_col_dividers": final_cols.tolist(),
+        "divider_method": divider_method,
+    })
 
 # ============================================================
 # Write extraction plan for surfacing
@@ -979,19 +1082,21 @@ print("03_segment.py runtime: ", runtime_03_seconds)
 # Update metadata
 # ============================================================
 
+
 metadata["03_segment"] = {
     "status": "complete",
 
-    "extraction_plan_csv": extraction_plan_csv,
-
-    "n_tiers_expected": n_tiers_expected,
-    "n_active_tiers": n_active_tiers,
-
-    "n_expected_specimens": n_expected_specimens,
-    "n_extracted_specimens": n_extracted_specimens,
-    "n_extraction_regions": n_extraction_regions,
+    "layout_summary": {
+        "n_expected_specimens": n_expected_specimens,
+        "n_tiers_expected": n_tiers_expected,
+    },
 
     "tier_segmentation": {
+        "n_active_tiers": n_active_tiers,
+        "left_edge": int(left_edge),
+        "right_edge": int(right_edge),
+        "selected_internal": selected_internal.tolist(),
+        "suggested_tier_boundaries": suggested_tier_boundaries.tolist(),
         "tier_boundaries": tier_segmentation["tier_boundaries"],
         "n_detected_tiers": tier_segmentation["n_detected_tiers"],
         "tier_detection_method": tier_segmentation["tier_detection_method"],
@@ -1001,7 +1106,6 @@ metadata["03_segment"] = {
     },
 
     "tier_normalization": {
-        "rotation_method": "estimate_grid_rotation_by_coherence",
         "angle_min": -5,
         "angle_max": 5,
         "angle_step": 0.25,
@@ -1009,8 +1113,22 @@ metadata["03_segment"] = {
     },
 
     "divider_review": {
-        "review_method": "automated_proposal_with_manual_override",
+        "divider_proposals": divider_proposals,
         "tier_divider_definitions": tier_divider_definitions,
+    },
+
+    "extraction_plan": {
+        "n_extracted_specimens": n_extracted_specimens,
+        "n_extraction_regions": n_extraction_regions,
+        "extraction_plan_csv": extraction_plan_csv,
+    },
+
+    "diagnostic_outputs": {
+        "diagnostic_figures_path": diagnostic_figures_path,
+        "tier_segmentation_review_png": tiers_png,
+        "tier_order_review_png": tier_order_png,
+        "divider_proposal_pngs": divider_proposal_pngs,
+        "occupancy_profile_pngs": occupancy_profile_pngs,
         "peak_diagnostics_csv": peak_diagnostics_csv,
     },
 
@@ -1019,8 +1137,9 @@ metadata["03_segment"] = {
         "padding": padding,
     },
 
-    "runtime_seconds": runtime_03_seconds,
+    "runtime_03_seconds": runtime_03_seconds,
 }
+
 save_metadata(metadata_path, metadata)
 
 # ============================================================
@@ -1031,6 +1150,13 @@ print("Segmentation complete.")
 print("Metadata updated:")
 print(metadata_path)
 print()
-print("Next step:")
-print("python 04_surface.py")
+
+print()
+print("Next step options:")
+print("1. Continue directly to 04_surface.py for a single dataset.")
+print("2. Stop here and manually start 04_surface.py later if you want to")
+print("   surface this dataset later or surface multiple datasets in a batch.")
+print()
+
+ask_run_next_step("python 04_surface.py", scanpath, metadatapath)
 

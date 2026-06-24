@@ -40,18 +40,23 @@ dataset_path = ask_existing_path(
 metadata_path = find_metadata_file_in_dataset(dataset_path)
 metadata = load_metadata_if_available(metadata_path)
 
-scanpath = metadata["00_share_data"]["scanpath"]
-slicepath = metadata["00_share_data"]["slicepath"]
-output_path = metadata["00_share_data"]["output_path"]
-slice_index_fraction = metadata["00_share_data"]["slice_index_fraction"]
+(
+    dataset_folder_name,
+    scanpath,
+    slicepath,
+    layoutfile,
+    output_path,
+    metadata_path,
+    slice_index_fraction,
+    voxel_size_mm,
+    voxel_spacing_mm,
+    transpose_preview,
+    rotation_angle,
+    rowrng,
+    colrng,
+    subvolume_file,
+) = unpack_metadata(metadata)
 
-dataset_folder_name = metadata["00_share_data"]["dataset_folder_name"]
-
-transpose_preview = metadata["01_set_rotation_crop"]["transpose_preview"]
-rotation_angle = metadata["01_set_rotation_crop"]["rotation_angle"]
-
-rowrng = metadata["01_set_rotation_crop"]["rowrng"]
-colrng = metadata["01_set_rotation_crop"]["colrng"]
 
 # ============================================================
 # Load slices
@@ -159,12 +164,14 @@ metadata["02_build_subvolume"] = {
     
     "zwindow": zwindow,
     "remainder": rem,
+
+    "resize_max_edge": 225,
     
     "subvolume_file": subvolume_file,
     "entire_subvolume_shape": entire_subvolume_shape,
     "subvolume_slice_shape": subvolume_slice_shape,
     
-    "runtime_seconds": runtime_02_seconds,
+    "runtime_02_seconds": runtime_02_seconds,
 }
 
 save_metadata(metadata_path, metadata)
@@ -177,8 +184,8 @@ print("Subvolume created.")
 print("Metadata updated:")
 print(metadata_path)
 print()
-print("Next step:")
-print("python 03_segment.py")
+
+ask_run_next_step("python 03_segment.py", scanpath, metadatapath)
 
 
 

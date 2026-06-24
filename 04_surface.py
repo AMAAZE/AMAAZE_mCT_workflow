@@ -24,16 +24,40 @@ from utils import *
 timer_04_start = timeit.default_timer()
 
 print()
-dataset_path = ask_existing_path(
-    "What is the full path to the dataset folder you want to continue working on?\n"
-    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
-    "Example:\n"
-    "C:/MyProject/CT_scan_01",
-    is_dir=True
+batch_mode = ask_yes_no(
+    "Do you want to surface multiple output runs in batch mode?",
+    default="n"
 )
 
-metadata_path = find_metadata_file_in_dataset(dataset_path)
-metadata = load_metadata_if_available(metadata_path)
+if batch_mode:
+    metadata_paths = []
+
+    while True:
+        metadata_path = ask_existing_path(
+            "Enter the full path to a metadata JSON file for one output run.\n"
+            "Press Enter without typing a path when you are done.",
+            is_dir=False
+        )
+        metadata_paths.append(metadata_path)
+
+        add_another = ask_yes_no(
+            "Add another metadata JSON file?",
+            default="y"
+        )
+
+        if not add_another:
+            break
+
+else:
+    dataset_path = ask_existing_path(
+        "What is the full path to the dataset folder you want to continue working on?\n"
+        "This should be the same dataset folder path you gave to 00_share_data.py.\n"
+        "Example:\n"
+        "C:/MyProject/CT_scan_01",
+        is_dir=True
+    )
+
+    metadata_paths = [find_metadata_file_in_dataset(dataset_path)]
 
 slicepath = metadata["00_share_data"]["slicepath"]
 output_path = metadata["00_share_data"]["output_path"]
@@ -353,11 +377,9 @@ metadata["04_surface"] = {
     },
 
     "runtime_seconds": {
-        "interactive_setup": interactive_setup_runtime_seconds,
         "extraction": extraction_runtime_seconds,
         "surfacing": surfacing_runtime_seconds,
-        "total_runtime_seconds": total_runtime_04_seconds,
-        "automated_runtime_seconds": automated_runtime_04_seconds,
+        "total_runtime_04_seconds": total_runtime_04_seconds,
     },
 }
 

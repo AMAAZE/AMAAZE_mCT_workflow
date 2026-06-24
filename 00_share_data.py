@@ -19,7 +19,7 @@ creates an output folder, and writes the first metadata file for the workflow.
 from utils import *
 
 # ============================================================
-# INTERVIEW USER ABOUT INPUT DATA
+# Interview user about input data
 # ============================================================
 timer_00_start = timeit.default_timer()
 
@@ -145,6 +145,8 @@ layoutfile = ask_existing_path(
     is_dir=False
 )
 
+layout_filename = os.path.basename(layoutfile)
+
 print()
 print("Voxel information controls the real-world scale of your meshes.")
 print("If your scan is isotropic, voxel size and slice spacing are the same.")
@@ -206,46 +208,55 @@ runtime_00_seconds = timer_00_stop - timer_00_start
 print("00_share_data.py runtime: ", runtime_00_seconds)
 
 # ============================================================
-# CREATE INITIAL WORKFLOW METADATA
+# Create metadata file and dictionaries
 # ============================================================
 
 metadata_filename = build_metadata_filename(dataset_folder_name)
 metadata_path = os.path.join(output_path, metadata_filename)  
 
-metadata = {
-    "00_share_data": {
-        "status": "complete",
-        
-        "dataset_folder_name": dataset_folder_name,
-        
+metadata= {}
+
+# ============================================================
+# Update metadata
+# ============================================================
+
+metadata["00_share_data"] = {
+    "status": "complete",
+
+    "data_locations": {
+        "dataset_folder_name": dataset_folder_name, 
         "scanpath": scanpath,
         "slicepath": slicepath,
+        "layout_filename": layout_filename,
         "layoutfile": layoutfile,
         "output_path": output_path,
         "metadata_path": metadata_path,
-        
-        "supported_extensions": supported_extensions,
+    },
 
+    "slice_inventory": {
+        "first_slice": first_slice,
+        "first_slice_index": first_slice_index,
+        "last_slice": last_slice,
+        "last_slice_index": last_slice_index,
         "n_slices": n_slices,
+        "slice_index_fraction": slice_index_fraction,
+        "slice_indices_are_consecutive": slice_indices_are_consecutive,
+        "supported_extensions": supported_extensions,
         "total_slice_bytes": total_slice_bytes,
         "total_slice_gb": total_slice_gb,
-        "first_slice": first_slice,
-        "last_slice": last_slice,
-        "first_slice_index": first_slice_index,
-        "last_slice_index": last_slice_index,
-        "slice_indices_are_consecutive": slice_indices_are_consecutive,
-        
-        "slice_index_fraction": slice_index_fraction,
-        
+    },
+
+    "voxel_information": {
+        "is_isotropic": is_isotropic,
         "voxel_size_mm": voxel_size_mm,
         "voxel_spacing_mm": voxel_spacing_mm,
-        "is_isotropic": is_isotropic,
-        
-        "runtime_seconds": runtime_00_seconds,
     },
+
+    "runtime_00_seconds": runtime_00_seconds,
 }
 
 save_metadata(metadata_path, metadata)
+
 
 # ============================================================
 # Confirm completion
@@ -258,5 +269,9 @@ print("Setup complete.")
 print(f"Metadata saved to:")
 print(metadata_path)
 print()
-print("Next step:")
-print("python 01_set_rotation_crop.py")
+
+ask_run_next_step("01_set_rotation_crop.py", scanpath, metadata_path)
+
+
+
+
