@@ -270,7 +270,7 @@ print(f"Metadata saved to:")
 print(metadata_path)
 print()
 
-ask_run_next_step("01_set_rotation_crop.py", scanpath, metadata_path)
+ask_run_next_step("01_set_rotation_crop.py", metadata_path)
 
 
 

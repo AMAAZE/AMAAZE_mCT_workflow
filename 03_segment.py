@@ -30,16 +30,25 @@ from utils import *
 
 timer_03_start = timeit.default_timer()
 
-print()
-dataset_path = ask_existing_path(
-    "What is the full path to the dataset folder you want to continue working on?\n"
-    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
-    "Example:\n"
-    "C:/MyProject/CT_scan_01",
-    is_dir=True
+#print()
+#dataset_path = ask_existing_path(
+#    "What is the full path to the dataset folder you want to continue working on?\n"
+#    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
+#    "Example:\n"
+#    "C:/MyProject/CT_scan_01",
+#    is_dir=True
+#)
+
+#metadata_path = find_metadata_file_in_dataset(dataset_path)
+#metadata = load_metadata_if_available(metadata_path)
+
+
+metadata_paths = get_metadata_paths_from_command_line_or_user(
+    step_name="03_segment",
+    allow_batch=False
 )
 
-metadata_path = find_metadata_file_in_dataset(dataset_path)
+metadata_path = metadata_paths[0]
 metadata = load_metadata_if_available(metadata_path)
 
 (
@@ -187,7 +196,7 @@ tier_boundary_result = select_tier_boundaries_by_edge_and_score(
 suggested_tier_boundaries = tier_boundary_result["selected_boundaries"]
 left_edge = tier_boundary_result["left_edge"]
 right_edge = tier_boundary_result["right_edge"]
-selected_internal = tier_boundary_result["selected_internal"]
+suggested_internal = tier_boundary_result["suggested_internal"]
 
 z_reduced = np.arange(len(mean_intensity_profile_z))
 
@@ -230,7 +239,7 @@ axs[1].plot(z_reduced, shifted_mean_intensity_profile_z)
 axs[1].axvline(left_edge, color="purple", linestyle="--", linewidth=2, label="detected edges")
 axs[1].axvline(right_edge, color="purple", linestyle="--", linewidth=2)
 
-for vvv in selected_internal:
+for vvv in suggested_internal:
     axs[1].axvline(vvv, color="green", linestyle="--", linewidth=2, label="selected internal divider")
 
 handles, labels = axs[1].get_legend_handles_labels()
@@ -297,7 +306,7 @@ print()
 print("Tier boundary selection summary")
 print(f"Detected left edge:      {left_edge}")
 print(f"Detected right edge:     {right_edge}")
-print(f"Detected internal:       {selected_internal}")
+print(f"Detected internal:       {suggested_internal}")
 print(f"Suggested boundaries:    {suggested_tier_boundaries}")
 print(f"Selection method:        {tier_detection_method}")
 print(f"Final boundaries used:   {ex}")
@@ -406,7 +415,7 @@ reverse_detected_tier_order = ask_yes_no(
     default="n"
 )
 
-tier_segmentation["tier_boundaries"] = [int(v) for v in ex]
+tier_segmentation["finalized_tier_boundaries"] = [int(v) for v in ex]
 tier_segmentation["n_detected_tiers"] = len(ex) - 1
 tier_segmentation["tier_detection_method"] = tier_detection_method
 tier_segmentation["reverse_detected_tier_order"] = reverse_detected_tier_order
@@ -423,7 +432,7 @@ ranges = [ranges[i] for i in active_tiers]
 active_tier_ids = tier_ids[active_tiers]
 
 tier_segmentation["active_tier_indices"] = [int(v) for v in active_tiers]
-tier_segmentation["active_tier_ranges"] = [
+tier_segmentation["active_tier_zranges"] = [
     [int(start), int(end)] for start, end in ranges
 ]
 
@@ -508,8 +517,8 @@ The resulting divider network is used to define specimen extraction
 regions for downstream processing.
 """
 occupancy_profile_pngs = []
-divider_proposal_pngs = []
-divider_proposals = []
+tier_divider_proposal_pngs = []
+tier_divider_proposals = []
 diagnostic_rows = []
 diagnostic_cols = []
 
@@ -813,7 +822,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
     dividers_png = os.path.join(
         diagnostic_figures_path,
-        f"{dataset_folder_name}_tier_{active_tier_ids[i]}_divider_proposals.png"
+        f"{dataset_folder_name}_tier_{active_tier_ids[i]}_tier_divider_proposals.png"
     )
 
     fig_dividers.savefig(
@@ -843,10 +852,14 @@ for i, normalized_image in enumerate(normalized_tier_images):
         "or type 'm' for manual override: "
     )
 
-    divider_proposals.append({
+    tier_divider_proposals.append({
         "tier_id": int(active_tier_ids[i]),
+        "n_expected_rows": layout_by_tier[int(active_tier_ids[i])]["n_rows"],
+        "n_expected_cols": layout_by_tier[int(active_tier_ids[i])]["n_cols"],
         "proposed_rows": np.array(row_centers).astype(int).tolist(),
         "proposed_cols": np.array(col_centers).astype(int).tolist(),
+        "n_detected_rows": len(proposed_rows) + 1,
+        "n_detected_cols": len(proposed_cols) + 1,
         "review_choice": review_choice.strip().lower(),
         "row_starting_threshold": row_starting_threshold,
         "col_starting_threshold": col_starting_threshold,
@@ -875,16 +888,16 @@ peak_diagnostics_df.to_csv(
 # manual-only mode: proposals are empty
 # assisted mode: proposals come from automation
 
-tier_divider_definitions = []
+tier_divider_finalized_definitions = []
 
 for i, normalized_image in enumerate(normalized_tier_images):
 
     tier_id = int(active_tier_ids[i])
 
-    proposed_rows = divider_proposals[i]["proposed_rows"]
-    proposed_cols = divider_proposals[i]["proposed_cols"]
+    proposed_rows = tier_divider_proposals[i]["proposed_rows"]
+    proposed_cols = tier_divider_proposals[i]["proposed_cols"]
 
-    if divider_proposals[i]["review_choice"] == "m":
+    if tier_divider_proposals[i]["review_choice"] == "m":
         final_rows, final_cols = review_dividers(
             image=normalized_image,
             proposed_rows=proposed_rows,
@@ -937,7 +950,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
     print(f"Final col dividers used: {final_cols}")
     print()
 
-    tier_divider_definitions.append({
+    tier_divider_finalized_definitions.append({
         "tier_id": tier_id,
         "proposed_row_dividers": proposed_rows,
         "proposed_col_dividers": proposed_cols,
@@ -957,7 +970,7 @@ extraction_plan_csv = os.path.join(
 
 extraction_rows = []
 
-for i, divider_info in enumerate(tier_divider_definitions):
+for i, divider_info in enumerate(tier_divider_finalized_definitions):
 
     tier_id = divider_info["tier_id"]
     z_start, z_end = ranges[i]
@@ -1011,7 +1024,7 @@ n_extraction_regions = len(extraction_rows)
 timer_03_stop = timeit.default_timer()
 
 # ============================================================
-# Prepare dataset for surfacing
+# Prepare dataset for surfacing and cleaning
 # ============================================================
 
 print()
@@ -1071,6 +1084,31 @@ padding = ask(
 )
 
 # ============================================================
+# Ask for cleaning parameters
+# ============================================================
+
+print()
+print(
+    "Now that we have set the surfacing parameters,\n"
+    "let's set a few cleaning parameters."
+)
+print()
+
+dust_cutoff = ask(
+    "Dust cutoff controls how small disconnected mesh fragments are removed.\n"
+    "The default is 20 vertices. Most users should press Enter.",
+    default=20,
+    cast=int
+)
+
+hole_tolerance = ask(
+    "Hole tolerance controls how many detected holes are allowed when selecting the main mesh component.\n"
+    "The default is 0. Most users should press Enter.",
+    default=0,
+    cast=int
+)
+
+# ============================================================
 # Calculate runtimes
 # ============================================================
 
@@ -1086,23 +1124,21 @@ print("03_segment.py runtime: ", runtime_03_seconds)
 metadata["03_segment"] = {
     "status": "complete",
 
-    "layout_summary": {
-        "n_expected_specimens": n_expected_specimens,
-        "n_tiers_expected": n_tiers_expected,
-    },
+    "n_expected_specimens": n_expected_specimens,
 
     "tier_segmentation": {
-        "n_active_tiers": n_active_tiers,
+        "n_tiers_expected": n_tiers_expected,  
+        "n_detected_tiers": tier_segmentation["n_detected_tiers"],
         "left_edge": int(left_edge),
         "right_edge": int(right_edge),
-        "selected_internal": selected_internal.tolist(),
+        "suggested_internal": suggested_internal.tolist(),
         "suggested_tier_boundaries": suggested_tier_boundaries.tolist(),
-        "tier_boundaries": tier_segmentation["tier_boundaries"],
-        "n_detected_tiers": tier_segmentation["n_detected_tiers"],
+        "finalized_tier_boundaries": tier_segmentation["finalized_tier_boundaries"],
         "tier_detection_method": tier_segmentation["tier_detection_method"],
-        "reverse_detected_tier_order": tier_segmentation["reverse_detected_tier_order"],
+        "n_active_tiers": n_active_tiers,
         "active_tier_indices": tier_segmentation["active_tier_indices"],
-        "active_tier_ranges": tier_segmentation["active_tier_ranges"],
+        "active_tier_zranges": tier_segmentation["active_tier_zranges"],
+        "reverse_detected_tier_order": tier_segmentation["reverse_detected_tier_order"],
     },
 
     "tier_normalization": {
@@ -1113,8 +1149,8 @@ metadata["03_segment"] = {
     },
 
     "divider_review": {
-        "divider_proposals": divider_proposals,
-        "tier_divider_definitions": tier_divider_definitions,
+        "tier_divider_proposals": tier_divider_proposals,
+        "tier_divider_finalized_definitions": tier_divider_finalized_definitions,
     },
 
     "extraction_plan": {
@@ -1125,16 +1161,29 @@ metadata["03_segment"] = {
 
     "diagnostic_outputs": {
         "diagnostic_figures_path": diagnostic_figures_path,
-        "tier_segmentation_review_png": tiers_png,
-        "tier_order_review_png": tier_order_png,
-        "divider_proposal_pngs": divider_proposal_pngs,
-        "occupancy_profile_pngs": occupancy_profile_pngs,
-        "peak_diagnostics_csv": peak_diagnostics_csv,
+
+        "diagnostic_figure_filenames": {
+            "tier_segmentation_review": os.path.basename(tiers_png),
+            "tier_order_review": os.path.basename(tier_order_png),
+            "tier_divider_proposals": [
+                os.path.basename(f) for f in divider_proposal_pngs
+            ],
+            "occupancy_profiles": [
+                os.path.basename(f) for f in occupancy_profile_pngs
+            ],
+        },
+
+        "peak_diagnostics_csv": os.path.basename(peak_diagnostics_csv),
     },
 
     "surfacing_setup": {
         "iso": iso,
         "padding": padding,
+    },
+    
+    "mesh_cleaning_parameters": {
+        "dust_cutoff": dust_cutoff,
+        "hole_tolerance": hole_tolerance,
     },
 
     "runtime_03_seconds": runtime_03_seconds,

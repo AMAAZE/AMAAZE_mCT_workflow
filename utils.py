@@ -21,6 +21,7 @@ import os
 import multiprocessing
 import timeit
 import re
+import argparse
 
 import numpy as np
 import pandas as pd
@@ -497,7 +498,8 @@ def find_metadata_file_in_dataset(dataset_path):
 
             return metadata_files[choice - 1]
 
-        return metadata_files[0]    
+        return metadata_files[0]   
+        
 # ============================================================
 # USER PROMPT HELPERS
 # Used for interactive steps throughout the workflow.
@@ -613,21 +615,165 @@ def ask_float_in_range(prompt, minimum, maximum, default=None):
         )
         print()
           
-def ask_run_next_step(next_script, scanpath, metadata_path):
+def get_metadata_paths_for_step(step_name, allow_batch=False):
+    """
+    Get metadata JSON path(s) for a script that was started manually.
+    """
+
+    if allow_batch:
+
+        print()
+        print(f"{step_name} can process either:")
+        print()
+        print("  1. A single workflow (continue one dataset)")
+        print("  2. Multiple workflows (batch processing)")
+        print()
+        print("Single workflow:")
+        print("    You will provide one metadata JSON file.")
+        print()
+        print("Batch processing:")
+        print("    You will provide one metadata JSON file for each workflow run.")
+        print()
+
+        batch_mode = ask_yes_no(
+            "Run in batch mode?",
+            default="n"
+        )
+
+        if batch_mode:
+            metadata_paths = []
+
+            print()
+            print("Enter one metadata JSON filepath for each workflow run.")
+            print("Press Enter after each filepath.")
+            print("When there are no more filepaths to enter,")
+            print("press Enter on a blank line to begin processing.")
+            print()
+
+            while True:
+                metadata_path = ask(
+                    "Metadata JSON filepath",
+                    default=""
+                ).strip()
+
+                if metadata_path == "":
+                    break
+
+                metadata_path = normalize_path(metadata_path)
+
+                if not os.path.isfile(metadata_path):
+                    print()
+                    print("That metadata JSON file was not found. Please try again.")
+                    print()
+                    continue
+
+                metadata_paths.append(metadata_path)
+
+            if len(metadata_paths) == 0:
+                raise RuntimeError(
+                    "No metadata JSON files were provided for batch processing."
+                )
+
+            print()
+            print(f"You have selected {len(metadata_paths)} workflow(s):")
+            print()
+
+            for i, metadata_path in enumerate(metadata_paths, start=1):
+                print(f"  {i}. {metadata_path}")
+
+            print()
+            print("If one of these is incorrect, answer No to restart the selection.")
+            print()
+
+            confirm = ask_yes_no(
+                "Proceed with these workflow(s)?",
+                default="y"
+            )
+
+            if not confirm:
+                raise RuntimeError("Batch processing cancelled by user.")
+
+            return metadata_paths
+
+    metadata_path = ask_existing_path(
+        f"What is the full path to the metadata JSON file for the workflow run you want to continue?\n"
+        f"This is the JSON file created by 00_share_data.py.",
+        is_dir=False
+    )
+
+    return [metadata_path]
+
+
+def get_metadata_paths_from_command_line_or_user(step_name, allow_batch=False):
+    """
+    Use --metadata_path if provided by an automatic handoff;
+    otherwise ask the user for metadata JSON path(s).
+    """
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--metadata_path", default=None)
+    args = parser.parse_args()
+
+    if args.metadata_path is not None:
+        return [normalize_path(args.metadata_path)]
+
+    return get_metadata_paths_for_step(
+        step_name=step_name,
+        allow_batch=allow_batch
+    )
+
+
+def ask_run_next_step(next_script, metadata_path):
     """
     Ask whether to immediately launch the next workflow script.
     """
-    print()
-    run_next = ask_yes_no(
-        f"Would you like to automatically start the next step now?\n"
-        f"Next step: python {next_script}",
-        default="y"
+
+    batch_capable_next_steps = (
+        "02_build_subvolume.py",
+        "04_surface.py",
     )
+
+    print()
+    print("Next workflow step:")
+    print(f"    python {next_script}")
+    print()
+
+    if next_script in batch_capable_next_steps:
+    
+        print("You have three options:")
+        print()
+        print("  1. Continue this workflow immediately.")
+        print("     The next step will start automatically using the current metadata file.")
+        print()
+        print("  2. Pause and continue this workflow later.")
+        print("     Start the next script manually and provide the current metadata file.")
+        print("     If you choose this option, we will provide the filepath that you will need.")
+        print()
+        print("  3. Pause and process multiple workflows together.")
+        print("     Start the next script manually and choose Batch Mode.")
+        print("     If you choose this option, you will be asked to provide the metadata (JSON) filepath")
+        print("     for each workflow you want to include.")
+        print()
+        print("Batch Mode allows you to process multiple workflows")
+        print("during a single execution of the next script.")
+        print()
+
+        run_next = ask_yes_no(
+            "Start this one workflow now?",
+            default="y"
+        )
+
+    else:
+        run_next = ask_yes_no(
+            "Would you like to automatically start the next step now?",
+            default="y"
+        )
 
     if run_next:
         print()
         print(f"Starting {next_script}...")
         print()
+
         subprocess.run(
             [
                 "python",
@@ -636,17 +782,20 @@ def ask_run_next_step(next_script, scanpath, metadata_path):
                 metadata_path,
             ],
             check=True
+        )
+
     else:
         print()
         print("Workflow paused.")
         print()
-        print("To continue later, return to this workflow folder and run:")
-        print(f"python {next_script}")
+        print("To continue later, run:")
         print()
-        print("When prompted, use this dataset folder path:")
-        print(scanpath)
+        print(f"    python {next_script}")
         print()
-
+        print("When prompted, provide this metadata JSON:")
+        print()
+        print(f"    {metadata_path}")
+        print()
  
 # ============================================================
 # 00_SHARE_DATA.PY HELPERS

@@ -22,16 +22,24 @@ from utils import *
 # ============================================================
 timer_01_start = timeit.default_timer()
 
-print()
-dataset_path = ask_existing_path(
-    "What is the full path to the dataset folder you want to continue working on?\n"
-    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
-    "Example:\n"
-    "C:/MyProject/CT_scan_01",
-    is_dir=True
+#print()
+#dataset_path = ask_existing_path(
+#    "What is the full path to the dataset folder you want to continue working on?\n"
+#    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
+#    "Example:\n"
+#    "C:/MyProject/CT_scan_01",
+#    is_dir=True
+#)
+#
+#metadata_path = find_metadata_file_in_dataset(dataset_path)
+#metadata = load_metadata_if_available(metadata_path)
+
+metadata_paths = get_metadata_paths_from_command_line_or_user(
+    step_name="01_set_rotation_crop",
+    allow_batch=False
 )
 
-metadata_path = find_metadata_file_in_dataset(dataset_path)
+metadata_path = metadata_paths[0]
 metadata = load_metadata_if_available(metadata_path)
 
 (
@@ -172,6 +180,23 @@ while True:
 timer_01_stop = timeit.default_timer()
 
 # ============================================================
+# Set z-window
+# ============================================================
+
+    zwindow = ask(
+        "zwindow controls how many adjacent slices are averaged when building the reduced working volume.\n"
+        "Use 1 to keep every slice.",
+        default=1,
+        cast=int
+    ) 
+
+    if zwindow <= 0:
+        print()
+        print("zwindow must be a positive integer.")
+        print("Please rerun this step and choose 1 or higher.")
+        raise SystemExit
+
+# ============================================================
 # Calculate runtimes
 # ============================================================
 
@@ -205,6 +230,5 @@ print("Metadata updated:")
 print(metadata_path)
 print()
 
-ask_run_next_step("python 02_build_subvolume.py", scanpath, metadatapath)
-
+ask_run_next_step("02_build_subvolume.py", metadata_path)
 
