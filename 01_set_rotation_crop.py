@@ -177,25 +177,24 @@ while True:
         print()
         print("Let's try the crop again.")
 
-timer_01_stop = timeit.default_timer()
-
 # ============================================================
 # Set z-window
 # ============================================================
 
-    zwindow = ask(
-        "zwindow controls how many adjacent slices are averaged when building the reduced working volume.\n"
-        "Use 1 to keep every slice.",
-        default=1,
-        cast=int
-    ) 
+zwindow = ask(
+    "zwindow controls how many adjacent slices are averaged when building the reduced working volume.\n"
+    "Use 1 to keep every slice.",
+    default=1,
+    cast=int
+) 
 
-    if zwindow <= 0:
-        print()
-        print("zwindow must be a positive integer.")
-        print("Please rerun this step and choose 1 or higher.")
-        raise SystemExit
+if zwindow <= 0:
+    print()
+    print("zwindow must be a positive integer.")
+    print("Please rerun this step and choose 1 or higher.")
+    raise SystemExit
 
+timer_01_stop = timeit.default_timer()
 # ============================================================
 # Calculate runtimes
 # ============================================================
@@ -207,6 +206,9 @@ print("01_set_crop_rotation.py runtime: ", runtime_01_seconds)
 # Update metadata
 # ============================================================
 
+metadata.setdefault("workflow_runtimes", {})
+metadata["workflow_runtimes"]["runtime_01_seconds"] = runtime_01_seconds
+
 metadata["01_set_rotation_crop"] = {
         "status": "complete",
     
@@ -214,8 +216,8 @@ metadata["01_set_rotation_crop"] = {
         "rotation_angle": rotation_angle, 
         "rowrng": rowrng,
         "colrng": colrng, 
-    
-        "runtime_01_seconds": runtime_01_seconds,
+        
+        "zwindow": zwindow,
 }
 
 save_metadata(metadata_path, metadata)

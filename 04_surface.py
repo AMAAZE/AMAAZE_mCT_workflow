@@ -124,73 +124,45 @@ for metadata_path in metadata_paths:
     else:
         dz = voxel_spacing_mm
 
-    # ============================================================
-    # Set parallelization
-    # ============================================================
-
-    default_extract_ncores = max(1, int(multiprocessing.cpu_count() * 0.85))
-    default_surface_ncores = min(20, multiprocessing.cpu_count())
+# ============================================================
+# Set parallelization
+# ============================================================
 
     print()
-    print("Surfacing can use multiple CPU cores (parallelization) to speed up extraction and surfacing.")
     print(
-        f"By default, extraction uses approximately 85% of available CPU cores "
-        f"({default_extract_ncores} cores on this computer), and surfacing uses "
-        f"up to 100% of available CPU cores with a maximum of 20 "
-        f"({default_surface_ncores} cores on this computer)."
+        "Surfacing can use multiple CPU cores (parallelization) "
+        "to speed up extraction, surfacing, and mesh cleaning."
     )
-    print("Advanced users may choose custom values if desired.")
+    print("Most users should accept the defaults.")
+    print("Advanced users may customize CPU use for each process.")
     print()
 
-    custom_cores = ask_yes_no(
-        "Do you want to manually set CPU core counts for this step?\n"
-        "Most users should choose no.",
-        default="n"
+    extract_parallelization = choose_parallel_cores(
+        process_label="specimen extraction",
+        default_percentage=85,
     )
 
-    if custom_cores:
-        extract_num_cores = ask(
-            "How many cores for subvolume extraction?",
-            default=default_extract_ncores,
-            cast=int
-        )
-        surface_num_cores = ask(
-            "How many cores for surfacing?",
-            default=default_surface_ncores,
-            cast=int
-        )
-    else:
-        extract_num_cores = default_extract_ncores
-        surface_num_cores = default_surface_ncores
-
-    extract_num_cores_method = "manual" if custom_cores else "default"
-    surface_num_cores_method = "manual" if custom_cores else "default"
-
-    default_clean_ncores = max(
-        1,
-        int(multiprocessing.cpu_count() / 4)
+    surface_parallelization = choose_parallel_cores(
+        process_label="surfacing",
+        default_percentage=95,
     )
 
-    custom_clean_cores = ask_yes_no(
-        "By default, mesh cleaning uses approximately one quarter of the \n"
-        "available CPU cores, but never fewer than one core. \n"
-        f"On this computer, the default is {default_clean_ncores} cores. \n"
-        "Most users choose the default. \n"
-        "Do you want to manually set CPU core count for mesh cleaning?\n",
-        default="n"
+    clean_parallelization = choose_parallel_cores(
+        process_label="mesh cleaning",
+        default_percentage=25,
     )
 
-    if custom_clean_cores:
-        clean_num_cores = ask(
-            "How many CPU cores would you like to use for mesh cleaning?",
-            default=default_clean_ncores,
-            cast=int
-        )
-    else:
-        clean_num_cores = default_clean_ncores
+    extract_num_cores = extract_parallelization["num_cores"]
+    surface_num_cores = surface_parallelization["num_cores"]
+    clean_num_cores = clean_parallelization["num_cores"]
 
-    clean_num_cores_method = "manual" if custom_clean_cores else "default"
-
+    print()
+    print("Parallelization settings:")
+    print(f"Extraction:    {extract_num_cores} core(s)")
+    print(f"Surfacing:     {surface_num_cores} core(s)")
+    print(f"Mesh cleaning: {clean_num_cores} core(s)")
+    print()
+    
     print()
     print("Setup is complete.")
     print("AMAAZE will now extract specimen volumes, surface meshes, and clean meshes.")
@@ -356,7 +328,7 @@ for metadata_path in metadata_paths:
     # Clean generated meshes
     # ============================================================
 
-    cleanup_timer_start = timeit.default_timer()
+    cleaning_timer_start = timeit.default_timer()
 
     print()
     print("Starting mesh cleaning.")
@@ -404,43 +376,46 @@ for metadata_path in metadata_paths:
         (mesh_cleaning_log["status"] == "failure").sum()
     )
 
-    cleanup_timer_stop = timeit.default_timer()
+    cleaning_timer_stop = timeit.default_timer()
     timer_04_stop = timeit.default_timer()
 
     # ============================================================
     # Calculate runtimes
     # ============================================================
 
-    interactive_setup_runtime_seconds = (
-        interactive_setup_timer_stop - timer_04_start
+    runtime_04_seconds = (timer_04_stop - timer_04_start)
+    extraction_runtime_seconds = (extraction_timer_stop - extraction_timer_start)
+    surfacing_runtime_seconds = (surfacing_timer_stop - surfacing_timer_start)
+    mesh_cleaning_runtime_seconds = (cleaning_timer_stop - cleaning_timer_start)
+    
+    total_workflow_runtime_seconds = (
+        runtime_00_seconds +
+        runtime_01_seconds +
+        runtime_02_seconds +
+        runtime_03_seconds +
+        runtime_04_seconds
     )
-
-    extraction_runtime_seconds = (
-        extraction_timer_stop - extraction_timer_start
-    )
-
-    surfacing_runtime_seconds = (
-        surfacing_timer_stop - surfacing_timer_start
-    )
-
-    mesh_cleaning_runtime_seconds = (
-        cleanup_timer_stop - cleanup_timer_start
-    )
-
-    total_runtime_04_seconds = (
-        timer_04_stop - timer_04_start
-    )
-
-    automated_runtime_04_seconds = (
-        extraction_runtime_seconds
-        + surfacing_runtime_seconds
-        + mesh_cleaning_runtime_seconds
-    )
+    
+    automated_runtime_seconds = (runtime_02_seconds + runtime_04_seconds)
+    
+    interactive_runtime_seconds = (
+        total_workflow_runtime_seconds - 
+        automated_runtime_seconds
+    )      
 
     # ============================================================
     # Update metadata
     # ============================================================
 
+    metadata.setdefault("workflow_runtimes", {})
+    metadata["workflow_runtimes"]["runtime_04_seconds"] = runtime_04_seconds
+    metadata["workflow_runtimes"]["extraction_runtime_seconds"] = extraction_runtime_seconds
+    metadata["workflow_runtimes"]["surfacing_runtime_seconds"] = surfacing_runtime_seconds
+    metadata["workflow_runtimes"]["mesh_cleaning_runtime_seconds"] = mesh_cleaning_runtime_seconds
+    metadata["workflow_runtimes"]["total_workflow_runtime_seconds"] = total_workflow_runtime_seconds 
+    metadata["workflow_runtimes"]["automated_runtime_seconds"] = automated_runtime_seconds
+    metadata["workflow_runtimes"]["interactive_runtime_seconds"] = interactive_runtime_seconds
+    
     metadata["04_surface"] = {
         "status": "complete",
 
@@ -467,21 +442,9 @@ for metadata_path in metadata_paths:
         },
 
         "parallelization": {
-            "extract_num_cores": extract_num_cores,
-            "extract_num_cores_method": extract_num_cores_method,
-            "surface_num_cores": surface_num_cores,
-            "surface_num_cores_method": surface_num_cores_method,
-            "clean_num_cores": clean_num_cores,
-            "clean_num_cores_method": clean_num_cores_method,
-        },
-
-        "runtime_seconds": {
-            "interactive_setup": interactive_setup_runtime_seconds,
-            "extraction": extraction_runtime_seconds,
-            "surfacing": surfacing_runtime_seconds,
-            "mesh_cleaning": mesh_cleaning_runtime_seconds,
-            "automated_runtime_seconds": automated_runtime_04_seconds,
-            "total_runtime_04_seconds": total_runtime_04_seconds,
+            "extraction": extract_parallelization,
+            "surfacing": surface_parallelization,
+            "mesh_cleaning": clean_parallelization,
         },
     }
 

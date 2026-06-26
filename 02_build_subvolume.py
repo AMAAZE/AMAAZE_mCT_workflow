@@ -161,19 +161,19 @@ for metadata_path in metadata_paths:
 # Update metadata
 # ============================================================
 
+    metadata.setdefault("workflow_runtimes", {})
+    metadata["workflow_runtimes"]["runtime_02_seconds"] = runtime_02_seconds
+
     metadata["02_build_subvolume"] = {
         "status": "complete",
-    
-        "zwindow": zwindow,
-        "remainder": rem,
 
         "resize_max_edge": 225,
+        
+        "remainder": rem,
     
         "subvolume_file": subvolume_file,
         "entire_subvolume_shape": entire_subvolume_shape,
         "subvolume_slice_shape": subvolume_slice_shape,
-    
-        "runtime_02_seconds": runtime_02_seconds,
     }
 
     save_metadata(metadata_path, metadata)

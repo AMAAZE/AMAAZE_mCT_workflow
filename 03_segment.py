@@ -1020,9 +1020,6 @@ n_expected_specimens = int(np.sum([np.sum(layout_by_tier[t]["mask"]) for t in la
 n_extracted_specimens = len(extraction_rows)
 n_extraction_regions = len(extraction_rows)
 
-
-timer_03_stop = timeit.default_timer()
-
 # ============================================================
 # Prepare dataset for surfacing and cleaning
 # ============================================================
@@ -1108,6 +1105,8 @@ hole_tolerance = ask(
     cast=int
 )
 
+timer_03_stop = timeit.default_timer()
+
 # ============================================================
 # Calculate runtimes
 # ============================================================
@@ -1120,6 +1119,8 @@ print("03_segment.py runtime: ", runtime_03_seconds)
 # Update metadata
 # ============================================================
 
+metadata.setdefault("workflow_runtimes", {})
+metadata["workflow_runtimes"]["runtime_03_seconds"] = runtime_03_seconds
 
 metadata["03_segment"] = {
     "status": "complete",
@@ -1185,8 +1186,6 @@ metadata["03_segment"] = {
         "dust_cutoff": dust_cutoff,
         "hole_tolerance": hole_tolerance,
     },
-
-    "runtime_03_seconds": runtime_03_seconds,
 }
 
 save_metadata(metadata_path, metadata)
@@ -1207,5 +1206,5 @@ print("2. Stop here and manually start 04_surface.py later if you want to")
 print("   surface this dataset later or surface multiple datasets in a batch.")
 print()
 
-ask_run_next_step("python 04_surface.py", scanpath, metadatapath)
+ask_run_next_step("python 04_surface.py", metadata_path)
 

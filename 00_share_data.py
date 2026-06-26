@@ -220,6 +220,10 @@ metadata= {}
 # Update metadata
 # ============================================================
 
+metadata["workflow_runtimes"] = {
+    "runtime_00_seconds": runtime_00_seconds,
+}
+
 metadata["00_share_data"] = {
     "status": "complete",
 
@@ -251,8 +255,6 @@ metadata["00_share_data"] = {
         "voxel_size_mm": voxel_size_mm,
         "voxel_spacing_mm": voxel_spacing_mm,
     },
-
-    "runtime_00_seconds": runtime_00_seconds,
 }
 
 save_metadata(metadata_path, metadata)

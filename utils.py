@@ -3667,3 +3667,95 @@ def clean_mesh_file(fname, input_mesh_folder, clean_mesh_folder, dust_cutoff, ho
         print(f"{fname}: mesh cleaning failed ({e})")
 
     return record
+    
+    
+def choose_parallel_cores(
+    process_label,
+    default_percentage,
+    default_cap=None,
+):
+    """
+    Choose CPU cores for one parallel workflow process.
+
+    Returns a dictionary with:
+    - percentage
+    - cap
+    - available_cores
+    - num_cores
+    - method
+    """
+
+    available_cores = multiprocessing.cpu_count()
+
+    if default_cap is None:
+        default_cap = available_cores
+
+    default_num_cores = max(
+        1,
+        min(
+            int(default_cap),
+            int(available_cores * (default_percentage / 100))
+        )
+    )
+
+    print()
+    print(f"{process_label}:")
+    print(f"Available CPU cores on this computer: {available_cores}")
+    print(
+        f"Default: use {default_percentage}% of available cores, "
+        f"with a cap of {default_cap}."
+    )
+    print(f"This gives {default_num_cores} core(s).")
+    print()
+
+    custom = ask_yes_no(
+        f"Do you want to customize CPU use for {process_label}?",
+        default="n"
+    )
+
+    if custom:
+        percentage = ask_float_in_range(
+            f"What percentage of available CPU cores should {process_label} use?",
+            minimum=1,
+            maximum=100,
+            default=default_percentage
+        )
+
+        cap = ask(
+            f"What is the maximum number of CPU cores {process_label} should use?\n"
+            f"The maximum available on this computer is {available_cores}.",
+            default=default_cap,
+            cast=int
+        )
+
+        cap = max(1, min(cap, available_cores))
+
+        num_cores = max(
+            1,
+            min(
+                cap,
+                int(available_cores * (percentage / 100))
+            )
+        )
+
+        method = "manual"
+
+    else:
+        percentage = default_percentage
+        cap = default_cap
+        num_cores = default_num_cores
+        method = "default"
+
+    return {
+        "percentage": percentage,
+        "cap": cap,
+        "available_cores": available_cores,
+        "num_cores": num_cores,
+        "method": method,
+    }
+    
+    
+    
+    
+    
+    
