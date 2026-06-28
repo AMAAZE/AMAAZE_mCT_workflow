@@ -22,18 +22,6 @@ from utils import *
 # ============================================================
 timer_01_start = timeit.default_timer()
 
-#print()
-#dataset_path = ask_existing_path(
-#    "What is the full path to the dataset folder you want to continue working on?\n"
-#    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
-#    "Example:\n"
-#    "C:/MyProject/CT_scan_01",
-#    is_dir=True
-#)
-#
-#metadata_path = find_metadata_file_in_dataset(dataset_path)
-#metadata = load_metadata_if_available(metadata_path)
-
 metadata_paths = get_metadata_paths_from_command_line_or_user(
     step_name="01_set_rotation_crop",
     allow_batch=False
@@ -42,30 +30,15 @@ metadata_paths = get_metadata_paths_from_command_line_or_user(
 metadata_path = metadata_paths[0]
 metadata = load_metadata_if_available(metadata_path)
 
-(
-    dataset_folder_name,
-    scanpath,
-    slicepath,
-    layoutfile,
-    output_path,
-    metadata_path,
-    slice_index_fraction,
-    voxel_size_mm,
-    voxel_spacing_mm,
-    transpose_preview,
-    rotation_angle,
-    rowrng,
-    colrng,
-    subvolume_file,
-) = unpack_metadata(metadata)
+md = unpack_metadata(metadata)
 
 # ============================================================
 # Load slices and identify representative slice
 # ============================================================
 
-slice_files, slice_indices = get_sorted_slice_files(slicepath)
+slice_files, slice_indices = get_sorted_slice_files(md.slicepath)
 
-slice_index = int(len(slice_files) * slice_index_fraction)
+slice_index = int(len(slice_files) * md.slice_index_fraction)
 slice_index = min(slice_index, len(slice_files) - 1)
 
 slice_file = slice_files[slice_index]
@@ -88,7 +61,7 @@ update_preview(
     fig, 
     oriented_image, 
     f"Representative slice | transpose_preview={transpose_preview}",
-    dataset_folder_name
+    md.dataset_folder_name
 )
 
 while True:
@@ -109,7 +82,7 @@ while True:
         fig, 
         oriented_image, 
         f"Representative slice | transpose_preview={transpose_preview}",
-    dataset_folder_name
+    md.dataset_folder_name
     )
 
     satisfied = ask_yes_no(
@@ -128,7 +101,7 @@ while True:
 
 rotation_angle = choose_rotation_angle_interactively(
     oriented_image,
-    dataset_folder_name
+    md.dataset_folder_name
 )
 
 rotated_image = apply_preview_rotation(
@@ -143,7 +116,7 @@ rotated_image = apply_preview_rotation(
 
 while True:
 
-    rowrng, colrng = collect_crop_bounds(rotated_image, dataset_folder_name)
+    rowrng, colrng = collect_crop_bounds(rotated_image, md.dataset_folder_name)
     
     if rowrng is None or colrng is None:
         continue
@@ -159,7 +132,7 @@ while True:
     plt.figure()
     plt.imshow(cropped_image, cmap="gray")
     plt.title(
-        f"{dataset_folder_name} \n"
+        f"{md.dataset_folder_name} \n"
         f"Crop preview | rows={rowrng}, cols={colrng}"
     )
     plt.axis("off")
@@ -184,7 +157,7 @@ while True:
 zwindow = ask(
     "zwindow controls how many adjacent slices are averaged when building the reduced working volume.\n"
     "Use 1 to keep every slice.",
-    default=1,
+    default=20,
     cast=int
 ) 
 

@@ -38,57 +38,37 @@ for metadata_path in metadata_paths:
     timer_04_start = timeit.default_timer()
 
     metadata = load_metadata_if_available(metadata_path)
+    
+    md = unpack_metadata(metadata)
 
     print()
     print("Surfacing and cleaning workflow for:")
     print(metadata_path)
     print()
 
-    slicepath = metadata["00_share_data"]["slicepath"]
-    output_path = metadata["00_share_data"]["output_path"]
-
-    voxel_size_mm = metadata["00_share_data"]["voxel_size_mm"]
-    voxel_spacing_mm = metadata["00_share_data"]["voxel_spacing_mm"]
-
-    rotation_angle = metadata["01_set_rotation_crop"]["rotation_angle"]
-    transpose_preview = metadata["01_set_rotation_crop"]["transpose_preview"]
-    rowrng = metadata["01_set_rotation_crop"]["rowrng"]
-    colrng = metadata["01_set_rotation_crop"]["colrng"]
-
-    subvolume_file = metadata["02_build_subvolume"]["subvolume_file"]
-    zwindow = metadata["02_build_subvolume"]["zwindow"]
-
-    extraction_plan_csv = metadata["03_segment"]["extraction_plan"]["extraction_plan_csv"]
-
-    iso = metadata["03_segment"]["surfacing_setup"]["iso"]
-    padding = metadata["03_segment"]["surfacing_setup"]["padding"]
-
-    dust_cutoff = metadata["03_segment"]["mesh_cleaning_parameters"]["dust_cutoff"]
-    hole_tolerance = metadata["03_segment"]["mesh_cleaning_parameters"]["hole_tolerance"]
-
     # ============================================================
     # Load subvolume, extraction plan, and slices
     # ============================================================
 
     try:
-        npzdata = np.load(subvolume_file)
+        npzdata = np.load(md.subvolume_file)
 
     except FileNotFoundError:
         raise RuntimeError(
-            f"Processed volume not found:\n{subvolume_file}\n\n"
+            f"Processed volume not found:\n{md.subvolume_file}\n\n"
             "Run 02_build_subvolume.py to create the processed volume."
         )
 
     try:
-        extraction_plan = pd.read_csv(extraction_plan_csv)
+        extraction_plan = pd.read_csv(md.extraction_plan_csv)
 
     except FileNotFoundError:
         raise RuntimeError(
-            f"Extraction plan not found:\n{extraction_plan_csv}\n\n"
+            f"Extraction plan not found:\n{md.extraction_plan_csv}\n\n"
             "Run 03_segment.py to create the extraction plan."
         )
 
-    slice_files, slice_indices = get_sorted_slice_files(slicepath)
+    slice_files, slice_indices = get_sorted_slice_files(md.slicepath)
     
     #Can we add something to the above exceptions that make sure it goes on and tries the next json?
 
@@ -96,16 +76,18 @@ for metadata_path in metadata_paths:
     # Prepare output folders
     # ============================================================
 
-    outpath = os.path.join(output_path, "Meshes")
+    outpath = os.path.join(md.output_path, "Meshes")
     os.makedirs(outpath, exist_ok=True)
 
-    clean_mesh_folder = os.path.join(output_path, "Clean_Meshes")
+    clean_mesh_folder = os.path.join(md.output_path, "Clean_Meshes")
     os.makedirs(clean_mesh_folder, exist_ok=True)
 
     mesh_cleaning_log_csv = os.path.join(
-        output_path,
+        md.output_path,
         "mesh_cleaning_log.csv"
     )
+    
+    surfacing_errors_csv = os.path.join(md.output_path, "surfacing_errors.csv")
 
     # ============================================================
     # Group extraction plan by tier
@@ -117,12 +99,10 @@ for metadata_path in metadata_paths:
     # Set voxel geometry
     # ============================================================
 
-    dx = voxel_size_mm
-
-    if voxel_spacing_mm is None:
-        dz = dx
+    if md.is_isotropic:
+        voxel_spacing_mm = md.voxel_size_mm
     else:
-        dz = voxel_spacing_mm
+        voxel_spacing_mm = md.voxel_spacing_mm
 
 # ============================================================
 # Set parallelization
@@ -193,8 +173,8 @@ for metadata_path in metadata_paths:
         ]
 
         tier_z_range_original = [
-            tier_z_range_reduced[0] * zwindow,
-            min(tier_z_range_reduced[1] * zwindow, len(slice_files))
+            tier_z_range_reduced[0] * md.zwindow,
+            min(tier_z_range_reduced[1] * md.zwindow, len(slice_files))
         ]
 
         tier_rotation_angle = float(tier_plan["tier_rotation_angle"].iloc[0])
@@ -205,9 +185,9 @@ for metadata_path in metadata_paths:
         ):
 
             image = read_slice(slice_files[slice_index])
-            image = apply_preview_orientation(image, transpose_preview)
-            image = rotate(image, rotation_angle, preserve_range=True, resize=True)
-            image = image[rowrng[0]:rowrng[1], colrng[0]:colrng[1]].copy()
+            image = apply_preview_orientation(image, md.transpose_preview)
+            image = rotate(image, md.rotation_angle, preserve_range=True, resize=True)
+            image = image[md.rowrng[0]:md.rowrng[1], md.colrng[0]:md.colrng[1]].copy()
             image = rotate(image, tier_rotation_angle, preserve_range=True)
 
             row_scale = image.shape[0] / npzdata["vol"].shape[1]
@@ -232,22 +212,22 @@ for metadata_path in metadata_paths:
                 ).round().astype(int)
 
                 tier_plan["row_start_padded"] = np.maximum(
-                    tier_plan["row_start_scaled"] - padding,
+                    tier_plan["row_start_scaled"] - md.padding,
                     0
                 )
 
                 tier_plan["row_end_padded"] = np.minimum(
-                    tier_plan["row_end_scaled"] + padding,
+                    tier_plan["row_end_scaled"] + md.padding,
                     image.shape[0]
                 )
 
                 tier_plan["col_start_padded"] = np.maximum(
-                    tier_plan["col_start_scaled"] - padding,
+                    tier_plan["col_start_scaled"] - md.padding,
                     0
                 )
 
                 tier_plan["col_end_padded"] = np.minimum(
-                    tier_plan["col_end_scaled"] + padding,
+                    tier_plan["col_end_scaled"] + md.padding,
                     image.shape[1]
                 )
 
@@ -284,7 +264,7 @@ for metadata_path in metadata_paths:
         plt.imsave(fname + ".png", overview, cmap="gray")
 
         shape_out = IMAGES.shape
-        np.savez_compressed(fname, I=IMAGES, dx=dx, dz=dz)
+        np.savez_compressed(fname, I=IMAGES, voxel_size_mm=md.voxel_size_mm, voxel_spacing_mm=voxel_spacing_mm)
 
         del IMAGES
         os.remove(fname + ".npy")
@@ -304,11 +284,9 @@ for metadata_path in metadata_paths:
     print("This step creates mesh files from the extracted specimen volumes.")
     print()
 
-    surfacing_errors_csv = os.path.join(output_path, "surfacing_errors.csv")
-
     dicom.surface_bones_parallel(
         directory=outpath,
-        iso=iso,
+        iso=md.iso,
         error_fname=surfacing_errors_csv,
         ncores=surface_num_cores
     )
@@ -355,8 +333,8 @@ for metadata_path in metadata_paths:
             f,
             input_mesh_folder,
             clean_mesh_folder,
-            dust_cutoff,
-            hole_tolerance
+            md.dust_cutoff,
+            md.hole_tolerance
         )
         for f in mesh_filenames
     )
@@ -389,14 +367,17 @@ for metadata_path in metadata_paths:
     mesh_cleaning_runtime_seconds = (cleaning_timer_stop - cleaning_timer_start)
     
     total_workflow_runtime_seconds = (
-        runtime_00_seconds +
-        runtime_01_seconds +
-        runtime_02_seconds +
-        runtime_03_seconds +
+        md.runtime_00_seconds +
+        md.runtime_01_seconds +
+        md.runtime_02_seconds +
+        md.runtime_03_seconds +
         runtime_04_seconds
     )
     
-    automated_runtime_seconds = (runtime_02_seconds + runtime_04_seconds)
+    automated_runtime_seconds = (
+        md.runtime_02_seconds + 
+        runtime_04_seconds
+    )
     
     interactive_runtime_seconds = (
         total_workflow_runtime_seconds - 
@@ -430,16 +411,6 @@ for metadata_path in metadata_paths:
         "n_input_meshes": len(mesh_filenames),
         "n_meshes_cleaned": n_meshes_cleaned,
         "n_mesh_cleaning_failures": n_mesh_cleaning_failures,
-
-        "surfacing_parameters": {
-            "iso": iso,
-            "padding": padding,
-        },
-
-        "mesh_cleaning_parameters": {
-            "dust_cutoff": dust_cutoff,
-            "hole_tolerance": hole_tolerance,
-        },
 
         "parallelization": {
             "extraction": extract_parallelization,

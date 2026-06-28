@@ -1,0 +1,39 @@
+{
+  "workflow_runtimes": {
+    "runtime_00_seconds": 63.88961216295138
+  },
+  "00_share_data": {
+    "status": "complete",
+    "data_locations": {
+      "dataset_folder_name": "test_data_synthetic",
+      "scanpath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic",
+      "slicepath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/CT_1_synthetic_slices",
+      "layout_filename": "layout_CT_1_synthetic.csv",
+      "layoutfile": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/layout_CT_1_synthetic.csv",
+      "output_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/test_data_synthetic_outputs",
+      "metadata_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/test_data_synthetic_outputs/test_data_synthetic_metadata.json"
+    },
+    "slice_inventory": {
+      "first_slice": "synthetic_ct_0000.tif",
+      "first_slice_index": 0,
+      "last_slice": "synthetic_ct_0454.tif",
+      "last_slice_index": 454,
+      "n_slices": 455,
+      "slice_index_fraction": 0.5,
+      "slice_indices_are_consecutive": true,
+      "supported_extensions": [
+        ".tif",
+        ".tiff",
+        ".dcm",
+        ".dicom"
+      ],
+      "total_slice_bytes": 114161320,
+      "total_slice_gb": 0.10632101446390152
+    },
+    "voxel_information": {
+      "is_isotropic": true,
+      "voxel_size_mm": 0.079,
+      "voxel_spacing_mm": null
+    }
+  }
+}

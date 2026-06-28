@@ -30,19 +30,6 @@ from utils import *
 
 timer_03_start = timeit.default_timer()
 
-#print()
-#dataset_path = ask_existing_path(
-#    "What is the full path to the dataset folder you want to continue working on?\n"
-#    "This should be the same dataset folder path you gave to 00_share_data.py.\n"
-#    "Example:\n"
-#    "C:/MyProject/CT_scan_01",
-#    is_dir=True
-#)
-
-#metadata_path = find_metadata_file_in_dataset(dataset_path)
-#metadata = load_metadata_if_available(metadata_path)
-
-
 metadata_paths = get_metadata_paths_from_command_line_or_user(
     step_name="03_segment",
     allow_batch=False
@@ -51,36 +38,19 @@ metadata_paths = get_metadata_paths_from_command_line_or_user(
 metadata_path = metadata_paths[0]
 metadata = load_metadata_if_available(metadata_path)
 
-(
-    dataset_folder_name,
-    scanpath,
-    slicepath,
-    layoutfile,
-    output_path,
-    metadata_path,
-    slice_index_fraction,
-    voxel_size_mm,
-    voxel_spacing_mm,
-    transpose_preview,
-    rotation_angle,
-    rowrng,
-    colrng,
-    subvolume_file,
-) = unpack_metadata(metadata)
+md = unpack_metadata(metadata)
 
 # ============================================================
 # Load subvolume (npz) from 02
 # ============================================================
 
-subvolume_file = metadata["02_build_subvolume"]["subvolume_file"]
-
-if not os.path.exists(subvolume_file):
+if not os.path.exists(md.subvolume_file):
     raise RuntimeError(
-        f"Processed volume not found: {subvolume_file}. "
+        f"Processed volume not found: {md.subvolume_file}. "
         "Run 02_build_subvolume.py first."
     )
 
-npzdata = np.load(subvolume_file)
+npzdata = np.load(md.subvolume_file)
 
 # Extract data for this workflow from npz
 vol = npzdata["vol"]
@@ -98,24 +68,23 @@ vol = npzdata["vol"]
 
 # Empty cells are converted to 0 by fillna(0) and are treated as
 # intentionally empty positions within the specimen layout.
-x = pd.read_csv(layoutfile).fillna(0)
-x = x.to_numpy()
+layout = pd.read_csv(md.layoutfile).fillna(0).to_numpy()
 
 # The layout CSV describes only the current dataset.
 # Column 0 is the tier number.
-if len(x) == 0:
+if len(layout) == 0:
     raise ValueError(
         "The layout CSV appears to be empty."
         "Check that the CSV describes the current dataset and follows the required format."
     )
 
 # Number of tiers listed in the layout file.
-n_tiers = int(x[:,0].max())
+n_tiers = int(layout[:,0].max())
 
 layout_by_tier = {}
 
 for tier_id in range(1, n_tiers + 1):
-    tier_data = x[x[:, 0] == tier_id]
+    tier_data = layout[layout[:, 0] == tier_id]
 
     if len(tier_data) == 0:
         continue
@@ -152,12 +121,27 @@ tier_mask = np.array([np.any(layout_by_tier[t]["mask"]) for t in tier_ids])
 # Prepare diagnostic figure output folder
 # ============================================================
 
-diagnostic_figures_path = os.path.join(output_path, "03_diagnostic_figures")
+diagnostic_figures_path = os.path.join(md.output_path, "03_diagnostic_figures")
 os.makedirs(diagnostic_figures_path, exist_ok=True)
 
 peak_diagnostics_csv = os.path.join(
-    output_path,
-    f"{dataset_folder_name}_peak_diagnostics.csv"
+    md.output_path,
+    f"{md.dataset_folder_name}_peak_diagnostics.csv"
+)
+
+tier_divider_proposals_csv = os.path.join(
+    md.output_path,
+    f"{md.dataset_folder_name}_tier_divider_proposals.csv"
+)
+
+tier_divider_finalized_definitions_csv = os.path.join(
+    md.output_path,
+    f"{md.dataset_folder_name}_tier_divider_finalized_definitions.csv"
+)
+
+extraction_plan_csv = os.path.join(
+    md.output_path,
+    f"{md.dataset_folder_name}_extraction_plan.csv"
 )
 
 # ============================================================
@@ -250,16 +234,16 @@ axs[1].set_xlabel("slice height (z)")
 axs[1].set_title("Suggested tier boundaries (edge-aware)")
 
 fig_tiers.suptitle(
-    f"{dataset_folder_name} | Tier segmentation review\n"
-    f"(z-window: {metadata['02_build_subvolume']['zwindow']}, "
-    f"original slices: {metadata['00_share_data']['n_slices']})" 
+    f"{md.dataset_folder_name} | Tier segmentation review\n"
+    f"(z-window: {md.zwindow}, "
+    f"original slices: {md.n_slices})" 
 )
 
 fig_tiers.tight_layout(rect=[0, 0, 1, 0.88])
 
 tiers_png = os.path.join(
     diagnostic_figures_path,
-    f"{dataset_folder_name}_tier_segmentation_review.png"
+    f"{md.dataset_folder_name}_tier_segmentation_review.png"
 )
 
 fig_tiers.savefig(
@@ -380,12 +364,12 @@ else:
     axs[1].axis("off")
 
 fig_tier_order.suptitle(
-    f"{dataset_folder_name} | Detected tier order preview"
+    f"{md.dataset_folder_name} | Detected tier order preview"
 )
 
 tier_order_png = os.path.join(
     diagnostic_figures_path,
-    f"{dataset_folder_name}_tier_order_review.png"
+    f"{md.dataset_folder_name}_tier_order_review.png"
 )
 
 fig_tier_order.savefig(
@@ -442,13 +426,13 @@ tier_segmentation["active_tier_zranges"] = [
 # ============================================================
 # Downstream divider and cell segmentation operate in .npz space.
 
-SLICES = [
+tier_subvolumes = [
     vol[start:end, :, :]
     for start, end in ranges
 ]
 
 # Mean projection of each active tier used for divider detection.
-I = [x.mean(0) for x in SLICES]
+tier_mean_projections = [x.mean(0) for x in tier_subvolumes]
 
 # ============================================================
 # Per-tier geometric normalization via rotation
@@ -461,8 +445,8 @@ I = [x.mean(0) for x in SLICES]
 normalized_tier_images = []
 tier_rotations = []
 
-for i in range(len(I)):
-    tier_image = I[i]
+for i in range(len(tier_mean_projections)):
+    tier_image = tier_mean_projections[i]
 
     best_angle, tested_angles, rotation_scores = estimate_grid_rotation_by_coherence(
         tier_image,
@@ -537,7 +521,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
     extreme intensity values.
 
     Current value selected empirically because it produced
-    stable divider detection on test datasets while preserving
+    stable divider detection on tefor i, normalized_image in enumerate(normalized_tier_images):st datasets while preserving
     boundary localization.
 
     Review across additional datasets.
@@ -722,13 +706,13 @@ for i, normalized_image in enumerate(normalized_tier_images):
     axs[1].legend()
 
     fig_occupancy.suptitle(
-        f"{dataset_folder_name} | Tier {i+1}: occupancy profiles",
+        f"{md.dataset_folder_name} | Tier {i+1}: occupancy profiles",
         fontsize=14
     )
 
     occupancy_png = os.path.join(
         diagnostic_figures_path,
-        f"{dataset_folder_name}_tier_{active_tier_ids[i]}_occupancy_profiles.png"
+        f"{md.dataset_folder_name}_tier_{active_tier_ids[i]}_occupancy_profiles.png"
     )
 
     fig_occupancy.savefig(
@@ -816,13 +800,13 @@ for i, normalized_image in enumerate(normalized_tier_images):
 
 
     fig_dividers.suptitle(
-        f"{dataset_folder_name} | Tier {i+1}: automated divider proposal",
+        f"{md.dataset_folder_name} | Tier {i+1}: automated divider proposal",
         fontsize=14
     )
 
     dividers_png = os.path.join(
         diagnostic_figures_path,
-        f"{dataset_folder_name}_tier_{active_tier_ids[i]}_tier_divider_proposals.png"
+        f"{md.dataset_folder_name}_tier_{active_tier_ids[i]}_tier_divider_proposals.png"
     )
 
     fig_dividers.savefig(
@@ -831,7 +815,7 @@ for i, normalized_image in enumerate(normalized_tier_images):
         bbox_inches="tight"
     )
 
-    divider_proposal_pngs.append(dividers_png)
+    tier_divider_proposal_pngs.append(dividers_png)
 
     plt.tight_layout()
     plt.show(block=False)
@@ -851,13 +835,16 @@ for i, normalized_image in enumerate(normalized_tier_images):
         "\nPress ENTER to accept automated dividers "
         "or type 'm' for manual override: "
     )
+    
+    proposed_rows = np.array(row_centers).astype(int).tolist()
+    proposed_cols = np.array(col_centers).astype(int).tolist()
 
     tier_divider_proposals.append({
         "tier_id": int(active_tier_ids[i]),
         "n_expected_rows": layout_by_tier[int(active_tier_ids[i])]["n_rows"],
         "n_expected_cols": layout_by_tier[int(active_tier_ids[i])]["n_cols"],
-        "proposed_rows": np.array(row_centers).astype(int).tolist(),
-        "proposed_cols": np.array(col_centers).astype(int).tolist(),
+        "proposed_rows": proposed_rows,
+        "proposed_cols": proposed_cols,
         "n_detected_rows": len(proposed_rows) + 1,
         "n_detected_cols": len(proposed_cols) + 1,
         "review_choice": review_choice.strip().lower(),
@@ -873,14 +860,11 @@ for i, normalized_image in enumerate(normalized_tier_images):
         "col_n_threshold_retained_peaks": col_n_threshold_retained_peaks,    
     })
 
-peak_diagnostics_df = pd.DataFrame(
-    diagnostic_rows + diagnostic_cols
-)
+peak_diagnostics_df = pd.DataFrame(diagnostic_rows + diagnostic_cols)
+peak_diagnostics_df.to_csv(peak_diagnostics_csv, index=False)
 
-peak_diagnostics_df.to_csv(
-    peak_diagnostics_csv,
-    index=False
-)
+tier_divider_proposals_df = pd.DataFrame(tier_divider_proposals)
+tier_divider_proposals_df.to_csv(tier_divider_proposals_csv, index=False)
 
 # ============================================================
 # Divider review / correction layer
@@ -954,19 +938,17 @@ for i, normalized_image in enumerate(normalized_tier_images):
         "tier_id": tier_id,
         "proposed_row_dividers": proposed_rows,
         "proposed_col_dividers": proposed_cols,
-        "final_row_dividers": final_rows.tolist(),
-        "final_col_dividers": final_cols.tolist(),
+        "final_row_dividers": np.array(final_rows).astype(int).tolist(),
+        "final_col_dividers": np.array(final_cols).astype(int).tolist(),        
         "divider_method": divider_method,
     })
+
+tier_divider_finalized_definitions_df = pd.DataFrame(tier_divider_finalized_definitions)
+tier_divider_finalized_definitions_df.to_csv(tier_divider_finalized_definitions_csv, index=False)
 
 # ============================================================
 # Write extraction plan for surfacing
 # ============================================================
-
-extraction_plan_csv = os.path.join(
-    output_path,
-    f"{dataset_folder_name}_extraction_plan.csv"
-)
 
 extraction_rows = []
 
@@ -980,11 +962,11 @@ for i, divider_info in enumerate(tier_divider_finalized_definitions):
     row_dividers = np.array(divider_info["final_row_dividers"]).astype(int)
     col_dividers = np.array(divider_info["final_col_dividers"]).astype(int)
     
-    row_dividers = remove_border_dividers(row_dividers, I[i].shape[0], border_margin_fraction=0.03)
-    col_dividers = remove_border_dividers(col_dividers, I[i].shape[1], border_margin_fraction=0.03)
+    row_dividers = remove_border_dividers(row_dividers, tier_mean_projections[i].shape[0], border_margin_fraction=0.03)
+    col_dividers = remove_border_dividers(col_dividers, tier_mean_projections[i].shape[1], border_margin_fraction=0.03)
 
-    row_edges = np.concatenate(([0], row_dividers, [I[i].shape[0]]))
-    col_edges = np.concatenate(([0], col_dividers, [I[i].shape[1]]))
+    row_edges = np.concatenate(([0], row_dividers, [tier_mean_projections[i].shape[0]]))
+    col_edges = np.concatenate(([0], col_dividers, [tier_mean_projections[i].shape[1]]))
     
     tier_rotation_angle = tier_rotations[i]["rotation_angle"]
 
@@ -1149,11 +1131,6 @@ metadata["03_segment"] = {
         "tier_rotations": tier_rotations,
     },
 
-    "divider_review": {
-        "tier_divider_proposals": tier_divider_proposals,
-        "tier_divider_finalized_definitions": tier_divider_finalized_definitions,
-    },
-
     "extraction_plan": {
         "n_extracted_specimens": n_extracted_specimens,
         "n_extraction_regions": n_extraction_regions,
@@ -1162,19 +1139,9 @@ metadata["03_segment"] = {
 
     "diagnostic_outputs": {
         "diagnostic_figures_path": diagnostic_figures_path,
-
-        "diagnostic_figure_filenames": {
-            "tier_segmentation_review": os.path.basename(tiers_png),
-            "tier_order_review": os.path.basename(tier_order_png),
-            "tier_divider_proposals": [
-                os.path.basename(f) for f in divider_proposal_pngs
-            ],
-            "occupancy_profiles": [
-                os.path.basename(f) for f in occupancy_profile_pngs
-            ],
-        },
-
-        "peak_diagnostics_csv": os.path.basename(peak_diagnostics_csv),
+        "peak_diagnostics_csv": peak_diagnostics_csv,
+        "tier_divider_proposals_csv": tier_divider_proposals_csv,
+        "tier_divider_finalized_definitions_csv": tier_divider_finalized_definitions_csv,
     },
 
     "surfacing_setup": {
@@ -1206,5 +1173,5 @@ print("2. Stop here and manually start 04_surface.py later if you want to")
 print("   surface this dataset later or surface multiple datasets in a batch.")
 print()
 
-ask_run_next_step("python 04_surface.py", metadata_path)
+ask_run_next_step("04_surface.py", metadata_path)
 

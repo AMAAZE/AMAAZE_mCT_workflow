@@ -32,9 +32,9 @@ print()
 
 print()
 dataset_folder_name = ask_dataset_folder_name(
-    "What is the name of the folder where we can find the scan dataset we will be processing today?\n"
+    "What is the name of the folder where we can find the scan dataset we will be processing today?\n\n"
     "Example:\n"
-    "CT_scan_01\n"
+    "CT_scan_01\n\n"
     "This folder name is used to name workflow outputs. \n"
     "If it is very long, your workflow output names will also be very long."    
 )
@@ -42,10 +42,9 @@ dataset_folder_name = ask_dataset_folder_name(
 print()
 scanpath = ask_existing_path(
     "What is the entire path to the folder for this scan dataset?\n"
-    "Please include the dataset folder name itself in the path.\n"
+    "Please include the dataset folder name itself in the path.\n\n"
     "Example:\n"
-    "C:/MyProject/CT_scan_01 \n"
-    "You will be asked for this filepath again in subsequent workflow steps, so keep it handy. \n",
+    "C:/MyProject/CT_scan_01 \n",
     is_dir=True
 )
 
@@ -102,7 +101,6 @@ while True:
     slice_indices_are_consecutive = bool(
         (np.diff(slice_indices) == 1).all()
     )
-
 
     print()
     print(f"We found {n_slices} supported slice files.")
@@ -270,6 +268,8 @@ print()
 print("Setup complete.")
 print(f"Metadata saved to:")
 print(metadata_path)
+print()
+print("Use this metadata JSON to continue the workflow later.")
 print()
 
 ask_run_next_step("01_set_rotation_crop.py", metadata_path)

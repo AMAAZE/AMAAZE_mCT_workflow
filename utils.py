@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, TextBox
 from matplotlib.patches import Rectangle
 
 import cv2 as cv
@@ -37,6 +37,7 @@ import pydicom
 import datetime
 import shutil
 import subprocess
+from types import SimpleNamespace
 
 import amaazetools.trimesh as tm
 from amaazetools import dicom
@@ -163,41 +164,198 @@ def format_runtime(seconds):
     return f"{hours:.2f} hr"
 
 def unpack_metadata(metadata):
+    """
+    Unpack canonical workflow metadata into local variables.
+
+    This is the only place workflow scripts should need to know
+    where values live inside the nested metadata JSON.
+    """
+
+    workflow_runtimes = metadata.get("workflow_runtimes", {})
+
+    # First-tier dictionaries
     step00 = metadata.get("00_share_data", {})
     step01 = metadata.get("01_set_rotation_crop", {})
     step02 = metadata.get("02_build_subvolume", {})
     step03 = metadata.get("03_segment", {})
     step04 = metadata.get("04_surface", {})
-    step05 = metadata.get("05_clean_meshes", {})
 
-    return {
-        "dataset_folder_name": step00.get("dataset_folder_name"),
-        "scanpath": step00.get("scanpath"),
-        "slicepath": step00.get("slicepath"),
-        "layoutfile": step00.get("layoutfile"),
-        "output_path": step00.get("output_path"),
-        "metadata_path": step00.get("metadata_path"),
+    # Second-tier dictionaries
+    data_locations = step00.get("data_locations", {})
+    slice_inventory = step00.get("slice_inventory", {})
+    voxel_information = step00.get("voxel_information", {})
 
-        "slice_index_fraction": step00.get("slice_index_fraction"),
-        "voxel_size_mm": step00.get("voxel_size_mm"),
-        "voxel_spacing_mm": step00.get("voxel_spacing_mm"),
+    tier_segmentation = step03.get("tier_segmentation", {})
+    tier_normalization = step03.get("tier_normalization", {})
+    extraction_plan = step03.get("extraction_plan", {})
+    diagnostic_outputs = step03.get("diagnostic_outputs", {})
+    surfacing_setup = step03.get("surfacing_setup", {})
+    mesh_cleaning_parameters_03 = step03.get("mesh_cleaning_parameters", {})
 
-        "transpose_preview": step01.get("transpose_preview"),
-        "rotation_angle": step01.get("rotation_angle"),
-        "rowrng": step01.get("rowrng"),
-        "colrng": step01.get("colrng"),
+    parallelization = step04.get("parallelization", {})
 
-        "subvolume_file": step02.get("subvolume_file"),
-        "zwindow": step02.get("zwindow"),
+    # third-tier dictionaries    
+    extract_parallelization = parallelization.get("extraction", {})
+    surface_parallelization = parallelization.get("surfacing", {})
+    clean_parallelization = parallelization.get("mesh_cleaning", {}) 
+    
+    # repeated variable names disentangled
+    status00 = step00.get("status")
+    status01 = step01.get("status")
+    status02 = step02.get("status")
+    status03 = step03.get("status")
+    status04 = step04.get("status")
+    
+    percentage_cores_extract = extract_parallelization.get("percentage") 
+    cap_extract = extract_parallelization.get("cap")
+    available_cores_extract = extract_parallelization.get("available_cores")
+    num_cores_extract = extract_parallelization.get("num_cores")
+    method_parallelization_extract = extract_parallelization.get("method")
+        
+    percentage_cores_surface = surface_parallelization.get("percentage") 
+    cap_surface = surface_parallelization.get("cap")
+    available_cores_surface = surface_parallelization.get("available_cores")
+    num_cores_surface = surface_parallelization.get("num_cores")
+    method_parallelization_surface = surface_parallelization.get("method")        
 
-        "extraction_plan_csv": step03.get("extraction_plan_csv"),
-        "iso": step03.get("surfacing_setup", {}).get("iso"),
-        "padding": step03.get("surfacing_setup", {}).get("padding"),
+    percentage_cores_clean = clean_parallelization.get("percentage") 
+    cap_clean = clean_parallelization.get("cap")
+    available_cores_clean = clean_parallelization.get("available_cores")
+    num_cores_clean = clean_parallelization.get("num_cores")
+    method_parallelization_clean = clean_parallelization.get("method")
 
-        "mesh_folder": step04.get("mesh_folder"),
-        "clean_mesh_folder": step05.get("clean_mesh_folder"),
-    }
+    return SimpleNamespace(
+        # Workflow runtimes
+        runtime_00_seconds=workflow_runtimes.get("runtime_00_seconds"),
+        runtime_01_seconds=workflow_runtimes.get("runtime_01_seconds"),
+        runtime_02_seconds=workflow_runtimes.get("runtime_02_seconds"),
+        runtime_03_seconds=workflow_runtimes.get("runtime_03_seconds"),
+        runtime_04_seconds=workflow_runtimes.get("runtime_04_seconds"),
+        extraction_runtime_seconds=workflow_runtimes.get("extraction_runtime_seconds"),
+        surfacing_runtime_seconds=workflow_runtimes.get("surfacing_runtime_seconds"),
+        mesh_cleaning_runtime_seconds=workflow_runtimes.get("mesh_cleaning_runtime_seconds"),
+        total_workflow_runtime_seconds=workflow_runtimes.get("total_workflow_runtime_seconds"),
+        automated_runtime_seconds=workflow_runtimes.get("automated_runtime_seconds"),
+        interactive_runtime_seconds=workflow_runtimes.get("interactive_runtime_seconds"),
 
+        # 00_share_data
+        status00=status00,
+        
+        dataset_folder_name=data_locations.get("dataset_folder_name"),
+        scanpath=data_locations.get("scanpath"),
+        slicepath=data_locations.get("slicepath"),
+        layout_filename=data_locations.get("layout_filename"),
+        layoutfile=data_locations.get("layoutfile"),
+        output_path=data_locations.get("output_path"),
+        metadata_path=data_locations.get("metadata_path"),
+
+        first_slice=slice_inventory.get("first_slice"),
+        first_slice_index=slice_inventory.get("first_slice_index"),
+        last_slice=slice_inventory.get("last_slice"),
+        last_slice_index=slice_inventory.get("last_slice_index"),
+        n_slices=slice_inventory.get("n_slices"),
+        slice_index_fraction=slice_inventory.get("slice_index_fraction"),
+        slice_indices_are_consecutive=slice_inventory.get("slice_indices_are_consecutive"),
+        supported_extensions=slice_inventory.get("supported_extensions"),
+        total_slice_bytes=slice_inventory.get("total_slice_bytes"),
+        total_slice_gb=slice_inventory.get("total_slice_gb"),
+
+        is_isotropic=voxel_information.get("is_isotropic"),
+        voxel_size_mm=voxel_information.get("voxel_size_mm"),
+        voxel_spacing_mm=voxel_information.get("voxel_spacing_mm"),
+
+        # 01_set_rotation_crop
+        status01=status01,
+        
+        transpose_preview=step01.get("transpose_preview"),
+        rotation_angle=step01.get("rotation_angle"),
+        rowrng=step01.get("rowrng"),
+        colrng=step01.get("colrng"),
+        zwindow=step01.get("zwindow"),
+
+        # 02_build_subvolume
+        status=step02.get("status"),
+        max_edge=step02.get("max_edge"),
+        remainder=step02.get("remainder"),
+        subvolume_file=step02.get("subvolume_file"),
+        entire_subvolume_shape=step02.get("entire_subvolume_shape"),
+        subvolume_slice_shape=step02.get("subvolume_slice_shape"),
+
+        # 03_segment
+        status03=status03,
+        
+        n_expected_specimens=step03.get("n_expected_specimens"),
+        
+        n_tiers_expected=tier_segmentation.get("n_tiers_expected"),
+        n_detected_tiers=tier_segmentation.get("n_detected_tiers"),
+        left_edge=tier_segmentation.get("left_edge"),
+        right_edge=tier_segmentation.get("right_edge"),
+        suggested_internal=tier_segmentation.get("suggested_internal"),
+        suggested_tier_boundaries=tier_segmentation.get("suggested_tier_boundaries"),
+        finalized_tier_boundaries=tier_segmentation.get("finalized_tier_boundaries"),
+        tier_detection_method=tier_segmentation.get("tier_detection_method"),
+        n_active_tiers=tier_segmentation.get("n_active_tiers"),
+        active_tier_indices=tier_segmentation.get("active_tier_indices"),
+        active_tier_zranges=tier_segmentation.get("active_tier_zranges"),
+        reverse_detected_tier_order=tier_segmentation.get("reverse_detected_tier_order"),
+        
+        angle_min=tier_normalization.get("angle_min"),
+        angle_max=tier_normalization.get("angle_max"),
+        angle_step=tier_normalization.get("angle_step"),
+        tier_rotations=tier_normalization.get("tier_rotations"),
+        
+        n_extracted_specimens=extraction_plan.get("n_extracted_specimens"),
+        n_extraction_regions=extraction_plan.get("n_extraction_regions"),
+        extraction_plan_csv=extraction_plan.get("extraction_plan_csv"),
+        
+        diagnostic_figures_path=diagnostic_outputs.get("diagnostic_figures_path"),
+        peak_diagnostics_csv=diagnostic_outputs.get("peak_diagnostics_csv"), 
+        tier_divider_proposals_csv=diagnostic_outputs.get("tier_divider_proposals_csv"),
+        tier_divider_finalized_definitions_csv=diagnostic_outputs.get("tier_divider_finalized_definitions_csv"),
+
+        iso=surfacing_setup.get("iso"),
+        padding=surfacing_setup.get("padding"),
+
+        dust_cutoff=mesh_cleaning_parameters_03.get("dust_cutoff"),
+        hole_tolerance=mesh_cleaning_parameters_03.get("hole_tolerance"),
+
+        # 04_surface
+        status04=status04,
+        
+        mesh_folder=step04.get("mesh_folder"),
+        clean_mesh_folder=step04.get("clean_mesh_folder"),
+        surfacing_errors_csv=step04.get("surfacing_errors_csv"),
+        mesh_cleaning_log_csv=step04.get("mesh_cleaning_log_csv"),
+
+        n_specimens_extracted=step04.get("n_specimens_extracted"),
+        n_meshes_generated=step04.get("n_meshes_generated"),
+        n_surfacing_errors=step04.get("n_surfacing_errors"),
+        n_input_meshes=step04.get("n_input_meshes"),
+        n_meshes_cleaned=step04.get("n_meshes_cleaned"),
+        n_mesh_cleaning_failures=step04.get("n_mesh_cleaning_failures"),
+
+        extraction=parallelization.get("extraction"),
+        surfacing=parallelization.get("surfacing"),
+        mesh_cleaning=parallelization.get("mesh_cleaning"),
+        
+        percentage_cores_extract=percentage_cores_extract, 
+        cap_extract=cap_extract,
+        available_cores_extract=available_cores_extract,
+        num_cores_extract=num_cores_extract,
+        method_parallelization_extract=method_parallelization_extract,
+        
+        percentage_cores_surface=percentage_cores_surface, 
+        cap_surface=cap_surface,
+        available_cores_surface=available_cores_surface,
+        num_cores_surface=num_cores_surface,
+        method_parallelization_surface=method_parallelization_surface,        
+
+        percentage_cores_clean=percentage_cores_clean, 
+        cap_clean=cap_clean,
+        available_cores_clean=available_cores_clean,
+        num_cores_clean=num_cores_clean,
+        method_parallelization_clean=method_parallelization_clean,
+    )
 
 
 def write_final_run_report(metadata):
@@ -582,6 +740,7 @@ def ask_existing_path(prompt, is_dir=None):
     """
 
     while True:
+        print()
         path = normalize_path(ask(prompt))
 
         if is_dir is True and os.path.isdir(path):
@@ -940,7 +1099,7 @@ def choose_rotation_angle_interactively(
     fig.patch.set_facecolor("white")
     ax.set_facecolor("black")
     ax.set_box_aspect(1)
-    plt.subplots_adjust(bottom=0.25)
+    plt.subplots_adjust(bottom=0.32)
 
     rotated_image = apply_preview_rotation(
         oriented_image,
@@ -985,8 +1144,8 @@ def choose_rotation_angle_interactively(
     rotation_slider = Slider(
         slider_ax,
         "Rotation",
-        -360.0,
-        360.0,
+        -180.0,
+        180.0,
         valinit=0.0,
         valstep=0.1
     )
@@ -1045,13 +1204,24 @@ def choose_rotation_angle_interactively(
     plus_button = Button(plus_ax, "+")
 
     def decrease_rotation(event):
-        rotation_slider.set_val(rotation_slider.val - 0.1)
+        rotation_slider.set_val(rotation_slider.val - 1.0)
 
     def increase_rotation(event):
-        rotation_slider.set_val(rotation_slider.val + 0.1)
+        rotation_slider.set_val(rotation_slider.val + 1.0)
 
     minus_button.on_clicked(decrease_rotation)
     plus_button.on_clicked(increase_rotation)
+    
+    text_ax = fig.add_axes([0.20, 0.005, 0.15, 0.04])
+    rotation_text = TextBox(text_ax, "Degrees", initial="0.0")
+
+    def submit_rotation_text(text):
+        try:
+            rotation_slider.set_val(float(text))
+        except ValueError:
+            pass
+
+    rotation_text.on_submit(submit_rotation_text)
 
     accept_ax = fig.add_axes([0.45, 0.005, 0.10, 0.04])
     accept_button = Button(accept_ax, "Accept")
