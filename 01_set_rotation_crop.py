@@ -6,9 +6,12 @@
 Original processing logic: RileyWilde
 Refactoring and workflow design: Katrina E. Yezzi-Woodley
 
-Preview a representative CT slice using the current user settings,
-apply preview orientation, rotation, and crop, and write the selected
-rotation/crop settings to controls.txt for downstream processing.
+Guided visual setup step for the AMAAZE mCT surfacing workflow.
+
+This script loads the metadata created by 00_share_data.py, opens
+interactive preview windows for representative-slice orientation and crop
+selection, records the selected rotation, row/column orientation, crop bounds,
+and z-window, and updates the workflow metadata for downstream processing.
 """
 
 # ============================================================
@@ -21,6 +24,29 @@ from utils import *
 # Load metadata
 # ============================================================
 timer_01_start = timeit.default_timer()
+
+TOTAL_QUESTIONS_01 = 4
+
+print_terminal_header("Step 2 of 5: Set Representative Slice Orientation")
+
+print("In this step, you will prepare a representative slice")
+print("so the workflow can build the correct working volume.")
+print()
+print("You will:")
+print()
+print("    1. Provide the appropriate filepath for the workflow")
+print("    2. Orient the representative slice")
+print("    3. Set the crop region")
+print("    4. Choose the z-window for subvolume building")
+print()
+print("The first and last steps are completed by answering questions in the terminal.")
+print()
+print("Steps 2 and 3 are completed using interactive preview windows.")
+print()
+print("When you're ready, press Enter to begin.")
+input("> ")
+
+print_question_header("Workflow Metadata JSON", 1, TOTAL_QUESTIONS_01)
 
 metadata_paths = get_metadata_paths_from_command_line_or_user(
     step_name="01_set_rotation_crop",
@@ -44,64 +70,18 @@ slice_index = min(slice_index, len(slice_files) - 1)
 slice_file = slice_files[slice_index]
 raw_image = read_slice(slice_file)
 
-print()
-print("Using representative slice:")
-print(os.path.basename(slice_file))
-
 # ============================================================
-# Set transpose
+# Set representative slice orientation
 # ============================================================
-transpose_preview = False
-oriented_image = apply_preview_orientation(raw_image, transpose_preview)
 
-fig, ax = plt.subplots()
-plt.show(block=False)
-update_preview(
-    ax, 
-    fig, 
-    oriented_image, 
-    f"Representative slice | transpose_preview={transpose_preview}",
+rotation_angle, transpose_preview = choose_rotation_angle_interactively(
+    raw_image,
     md.dataset_folder_name
 )
 
-while True:
-
-    print()
-    print("Compare the preview window to your layout CSV.")
-    print("If rows and columns appear swapped relative to the layout, transpose the preview.")
-    print()
-
-    transpose_preview = ask_yes_no(
-        "Would you like to transpose the preview image?",
-        default="n"
-    )
-
-    oriented_image = apply_preview_orientation(raw_image, transpose_preview)
-
-    update_preview(ax, 
-        fig, 
-        oriented_image, 
-        f"Representative slice | transpose_preview={transpose_preview}",
-    md.dataset_folder_name
-    )
-
-    satisfied = ask_yes_no(
-        "After transposing, do the rows and columns appear correct relative to the layout CSV?",
-        default="y"
-    )
-
-    if satisfied:
-        break
-
-    plt.close(fig)
-
-# ============================================================
-# Set rotation (New interactive version)
-# ============================================================
-
-rotation_angle = choose_rotation_angle_interactively(
-    oriented_image,
-    md.dataset_folder_name
+oriented_image = apply_preview_orientation(
+    raw_image,
+    transpose_preview,
 )
 
 rotated_image = apply_preview_rotation(
@@ -109,71 +89,54 @@ rotated_image = apply_preview_rotation(
     rotation_angle
 )
 
-
 # ============================================================
 # Set crop
 # ============================================================
 
-while True:
+rowrng, colrng = collect_crop_bounds_with_guides(
+    rotated_image,
+    md.dataset_folder_name
+)
 
-    rowrng, colrng = collect_crop_bounds(rotated_image, md.dataset_folder_name)
-    
-    if rowrng is None or colrng is None:
-        continue
+cropped_image = rotated_image[
+    rowrng[0]:rowrng[1],
+    colrng[0]:colrng[1]
+].copy()
 
-    cropped_image = rotated_image[
-        rowrng[0]:rowrng[1],
-        colrng[0]:colrng[1]
-    ].copy()
-
-    print("Rotated image shape:", rotated_image.shape)
-    print("Cropped image shape:", cropped_image.shape)
-
-    plt.figure()
-    plt.imshow(cropped_image, cmap="gray")
-    plt.title(
-        f"{md.dataset_folder_name} \n"
-        f"Crop preview | rows={rowrng}, cols={colrng}"
-    )
-    plt.axis("off")
-    plt.show(block=False)
-
-    satisfied = ask_yes_no(
-        "Does this crop look correct?",
-        default="y"
-    )
-
-    if satisfied:
-        break
-    else:
-        plt.close()
-        print()
-        print("Let's try the crop again.")
+print()
+print_success("Representative slice orientation accepted.")
+print()
+print_success("Crop region accepted.")
+print()
 
 # ============================================================
 # Set z-window
 # ============================================================
 
+print_question_header("Reduced Working Volume", 4, 4)
+
+print("The next workflow step builds a reduced working volume.")
+print()
+print("The z-window controls how many neighboring slices are averaged together.")
+print("Higher values reduce noise, but may smooth fine detail.")
+print()
+print("Recommended default: 20")
+print()
+
 zwindow = ask(
-    "zwindow controls how many adjacent slices are averaged when building the reduced working volume.\n"
-    "Use 1 to keep every slice.",
+    "Choose a z-window value.\n"
+    "Press Enter to accept the recommended default.",
     default=20,
     cast=int
-) 
-
-if zwindow <= 0:
-    print()
-    print("zwindow must be a positive integer.")
-    print("Please rerun this step and choose 1 or higher.")
-    raise SystemExit
+)
 
 timer_01_stop = timeit.default_timer()
+
 # ============================================================
 # Calculate runtimes
 # ============================================================
 
 runtime_01_seconds = timer_01_stop - timer_01_start
-print("01_set_crop_rotation.py runtime: ", runtime_01_seconds)
 
 # ============================================================
 # Update metadata
@@ -195,14 +158,21 @@ metadata["01_set_rotation_crop"] = {
 
 save_metadata(metadata_path, metadata)
 
-
 # ============================================================
 # Confirm completion
 # ============================================================
+
+print_step_complete_header("Step 2 Complete")
+
+print("Representative slice setup complete.")
 print()
-print("Rotation and crop setup complete.")
+print(f"Setup took {format_runtime(runtime_01_seconds)} to complete.")
+print()
 print("Metadata updated:")
-print(metadata_path)
+print()
+print(f"    {metadata_path}")
+print()
+print("Important: Use this metadata JSON to continue the workflow later.")
 print()
 
 ask_run_next_step("02_build_subvolume.py", metadata_path)

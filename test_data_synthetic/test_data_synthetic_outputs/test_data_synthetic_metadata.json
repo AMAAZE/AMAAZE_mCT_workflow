@@ -1,6 +1,8 @@
 {
   "workflow_runtimes": {
-    "runtime_00_seconds": 63.88961216295138
+    "runtime_00_seconds": 258.5210505919531,
+    "runtime_01_seconds": 19.193343768129125,
+    "runtime_02_seconds": 0.6248284059111029
   },
   "00_share_data": {
     "status": "complete",
@@ -35,5 +37,34 @@
       "voxel_size_mm": 0.079,
       "voxel_spacing_mm": null
     }
+  },
+  "01_set_rotation_crop": {
+    "status": "complete",
+    "transpose_preview": false,
+    "rotation_angle": 0.0,
+    "rowrng": [
+      35,
+      318
+    ],
+    "colrng": [
+      35,
+      318
+    ],
+    "zwindow": 20
+  },
+  "02_build_subvolume": {
+    "status": "complete",
+    "max_edge": 225,
+    "remainder": 15,
+    "subvolume_file": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/test_data_synthetic_outputs/test_data_synthetic_subvolume.npz",
+    "entire_subvolume_shape": [
+      23,
+      225,
+      225
+    ],
+    "subvolume_slice_shape": [
+      225,
+      225
+    ]
   }
 }

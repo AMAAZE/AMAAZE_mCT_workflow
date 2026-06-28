@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button, TextBox
+from matplotlib.widgets import Slider, Button, TextBox, CheckButtons
 from matplotlib.patches import Rectangle
 
 import cv2 as cv
@@ -663,6 +663,49 @@ def find_metadata_file_in_dataset(dataset_path):
 # Used for interactive steps throughout the workflow.
 # ============================================================
 
+def print_terminal_header(title, char="=", width=46):
+    """
+    Print a simple terminal header.
+    """
+    print()
+    print(char * width)
+    print(title)
+    print(char * width)
+    print()
+
+
+def print_question_header(title, question_number=None, total_questions=None):
+    print()
+    print("-" * 46)
+
+    if question_number is None or total_questions is None:
+        print(title)
+    else:
+        print(f"{title} (Question {question_number} of {total_questions})")
+
+    print("-" * 46)
+    print()
+
+
+def print_step_complete_header(title="Step 1 Complete"):
+    """
+    Print a standardized completion header.
+    """
+    print()
+    print("-" * 46)
+    print(title)
+    print("-" * 46)
+    print()
+
+
+def print_success(message):
+    """
+    Print a short success confirmation.
+    """
+    print()
+    print(f"✓ {message}")
+    print()
+    
 def ask(prompt, default=None, cast=str):
     """
     Ask the user a question and return the typed response.
@@ -902,19 +945,15 @@ def ask_run_next_step(next_script, metadata_path):
         print("You have three options:")
         print()
         print("  1. Continue this workflow immediately.")
-        print("     The next step will start automatically using the current metadata file.")
+        print("     Press enter and continue.")
         print()
         print("  2. Pause and continue this workflow later.")
-        print("     Start the next script manually and provide the current metadata file.")
-        print("     If you choose this option, we will provide the filepath that you will need.")
+        print("     Start the next script manually.")
         print()
         print("  3. Pause and process multiple workflows together.")
         print("     Start the next script manually and choose Batch Mode.")
-        print("     If you choose this option, you will be asked to provide the metadata (JSON) filepath")
-        print("     for each workflow you want to include.")
-        print()
-        print("Batch Mode allows you to process multiple workflows")
-        print("during a single execution of the next script.")
+        print("     If you choose this option, you will be asked to provide")
+        print("     the metadata (JSON) filepath for each workflow you want to include.")
         print()
 
         run_next = ask_yes_no(
@@ -1079,87 +1118,49 @@ def apply_preview_rotation(im, angle_deg):
         resize=True,
         preserve_range=True
     )
-
+#############################################################
+#############################################################
 def choose_rotation_angle_interactively(
-    oriented_image,
+    raw_image,
     dataset_folder_name
 ):
     """
-    Interactive rotation selector.
-    Returns one final rotation angle in degrees.
+    Interactive orientation selector.
+
+    Returns the final rotation angle and whether
+    rows and columns were swapped.
     """
 
+    # initialize variables
     rotation_angle = {"value": 0.0}
+    transpose_preview = {"value": False}
 
-    image_h, image_w = oriented_image.shape[:2]
+    # Format preview window
+    image_h, image_w = raw_image.shape[:2]
     display_size = int(np.ceil(np.sqrt(image_h**2 + image_w**2)))
     display_center = display_size / 2
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(8, 10))
     fig.patch.set_facecolor("white")
     ax.set_facecolor("black")
     ax.set_box_aspect(1)
-    plt.subplots_adjust(bottom=0.32)
+    plt.subplots_adjust(top=0.95, bottom=0.2)
 
-    rotated_image = apply_preview_rotation(
-        oriented_image,
-        rotation_angle["value"]
-    )
-
-    ax.imshow(
-        rotated_image, 
-        cmap="gray", 
-        aspect="equal",
-        extent = [
-            display_center - rotated_image.shape[1] / 2,
-            display_center + rotated_image.shape[1] / 2,
-            display_center + rotated_image.shape[0] / 2,
-            display_center - rotated_image.shape[0] / 2,
-        ],
-        zorder=1
-    )
-    
-    ax.set_xlim(0, display_size)
-    ax.set_ylim(display_size, 0)
-    ax.add_patch(
-        Rectangle(
-            (0, 0),
-            display_size,
-            display_size,
-            facecolor="black",
-            zorder=0
+    # Helper to iteratively redraw imate in preview window in response to user selections
+    def redraw_orientation_preview():
+        preview_image = apply_preview_orientation(
+            raw_image,
+            transpose_preview["value"]
         )
-    )
-
-    ax.axhline(display_center, color="red", linewidth=0.8)
-    ax.axvline(display_center, color="red", linewidth=0.8)
-    ax.set_title(
-        f"{dataset_folder_name}\n"
-        f"Rotation = {rotation_angle['value']:.2f} degrees"
-    )
-
-    ax.axis("off")
-
-    slider_ax = fig.add_axes([0.20, 0.10, 0.50, 0.03])
-    rotation_slider = Slider(
-        slider_ax,
-        "Rotation",
-        -180.0,
-        180.0,
-        valinit=0.0,
-        valstep=0.1
-    )
-
-    def update_rotation(value):
-        rotation_angle["value"] = float(value)
 
         rotated_image = apply_preview_rotation(
-            oriented_image,
+            preview_image,
             rotation_angle["value"]
         )
-
+        
         ax.clear()
         ax.set_facecolor("black")
+
         ax.imshow(
             rotated_image, 
             cmap="gray", 
@@ -1171,9 +1172,8 @@ def choose_rotation_angle_interactively(
                 display_center - rotated_image.shape[0] / 2,
             ],
             zorder=1
-
         )
-
+    
         ax.set_xlim(0, display_size)
         ax.set_ylim(display_size, 0)
         ax.add_patch(
@@ -1186,56 +1186,230 @@ def choose_rotation_angle_interactively(
             )
         )
 
-        ax.axhline(display_center, color="red", linewidth=0.8, zorder=2)
-        ax.axvline(display_center, color="red", linewidth=0.8, zorder=2)
+        ax.axhline(display_center, color="red", linewidth=0.8)
+        ax.axvline(display_center, color="red", linewidth=0.8)
+
         ax.set_title(
-            f"{dataset_folder_name}\n"
-            f"Rotation = {rotation_angle['value']:.2f} degrees"
+            f"{dataset_folder_name} | Representative Slice Orientation\n\n"
+            f"Rotation = {rotation_angle['value']:.1f} degrees\n"
+            f"Swap rows and columns = {transpose_preview['value']}"
         )
+
         ax.axis("off")
         fig.canvas.draw_idle()
-
-    rotation_slider.on_changed(update_rotation)
-
-    minus_ax = fig.add_axes([0.82, 0.085, 0.035, 0.05])
+        # Helper ends here
+        
+    # create slider
+    slider_ax = fig.add_axes([0.28, 0.18, 0.47, 0.03])
+        
+    rotation_slider = Slider(
+        slider_ax,
+        "Rotation",
+        -180.0,
+        180.0,
+        valinit=0.0,
+        valstep=0.1,
+        valfmt="%.1f"
+    )
+    
+    # create textbox
+    text_ax = fig.add_axes([0.45, 0.13, 0.1, 0.03])
+    rotation_text = TextBox(text_ax, "Degrees", initial="0.0")    
+    
+    # create buttons
+    minus_ax = fig.add_axes([0.56, 0.13, 0.024, 0.03])
     minus_button = Button(minus_ax, "-")
 
-    plus_ax = fig.add_axes([0.86, 0.085, 0.035, 0.05])
+    plus_ax = fig.add_axes([0.59, 0.13, 0.024, 0.03])
     plus_button = Button(plus_ax, "+")
+      
+    # create checkbox   
+    checkbox_ax = fig.add_axes([0.335, 0.09, 0.30, 0.03])
+    checkbox_ax.set_frame_on(False)
+    checkbox_ax.set_xticks([])
+    checkbox_ax.set_yticks([])
 
-    def decrease_rotation(event):
-        rotation_slider.set_val(rotation_slider.val - 1.0)
+    swap_checkbox = CheckButtons(
+        checkbox_ax,
+        ["Swap rows and columns"],
+        [False],
+    ) 
+       
+    # create accept button
+    accept_ax = fig.add_axes([0.42, 0.025, 0.16, 0.05])
+    accept_button = Button(accept_ax, "Accept")
 
-    def increase_rotation(event):
-        rotation_slider.set_val(rotation_slider.val + 1.0)
-
-    minus_button.on_clicked(decrease_rotation)
-    plus_button.on_clicked(increase_rotation)
-    
-    text_ax = fig.add_axes([0.20, 0.005, 0.15, 0.04])
-    rotation_text = TextBox(text_ax, "Degrees", initial="0.0")
-
+    # update orientation helpers
+    def update_rotation(value):
+        rotation_angle["value"] = round(float(value), 1)
+        rotation_text.set_val(f"{rotation_angle['value']:.1f}")
+        redraw_orientation_preview()
+        
+    def toggle_transpose(_):
+        transpose_preview["value"] = not transpose_preview["value"]
+        redraw_orientation_preview()        
+        
+    def decrease_rotation(_):
+        rotation_slider.set_val(rotation_slider.val - 1.0)          
+        
+    def increase_rotation(_):
+        rotation_slider.set_val(rotation_slider.val + 1.0)            
+        
+    # finalize orientation helpers
     def submit_rotation_text(text):
         try:
             rotation_slider.set_val(float(text))
         except ValueError:
-            pass
+            pass    
 
+    def accept_rotation(_):
+        plt.close(fig)   
+    
+    rotation_slider.on_changed(update_rotation)
+    swap_checkbox.on_clicked(toggle_transpose)
+    minus_button.on_clicked(decrease_rotation)
+    plus_button.on_clicked(increase_rotation)
     rotation_text.on_submit(submit_rotation_text)
-
-    accept_ax = fig.add_axes([0.45, 0.005, 0.10, 0.04])
-    accept_button = Button(accept_ax, "Accept")
-
-    def accept_rotation(event):
-        plt.close(fig)
-
     accept_button.on_clicked(accept_rotation)
+
+    redraw_orientation_preview()
 
     plt.show(block=True)
 
-    return rotation_angle["value"]
+    return rotation_angle["value"], transpose_preview["value"]
 
-    
+def collect_crop_bounds_with_guides(image, dataset_folder_name):
+    """
+    Let the user define crop bounds using four draggable guide lines.
+
+    Returns:
+        rowrng = [top, bottom]
+        colrng = [left, right]
+    """
+
+    crop_state = {
+        "left": int(image.shape[1] * 0.10),
+        "right": int(image.shape[1] * 0.90),
+        "top": int(image.shape[0] * 0.10),
+        "bottom": int(image.shape[0] * 0.90),
+        "active_guide": None,
+        "accepted": False,
+    }
+
+    fig, ax = plt.subplots(figsize=(8, 10))
+    fig.patch.set_facecolor("white")
+    plt.subplots_adjust(bottom=0.15)
+
+    ax.imshow(image, cmap="gray")
+    ax.set_title(
+        f"{dataset_folder_name} | Crop to box edges\n"
+        "Adjust crop guides by clicking and dragging.\n"
+        "Click Accept when the crop looks correct."
+    )
+    ax.axis("off")
+
+    left_line = ax.axvline(crop_state["left"], color="red", linewidth=1.2)
+    right_line = ax.axvline(crop_state["right"], color="red", linewidth=1.2)
+    top_line = ax.axhline(crop_state["top"], color="red", linewidth=1.2)
+    bottom_line = ax.axhline(crop_state["bottom"], color="red", linewidth=1.2)
+
+    guide_lines = {
+        "left": left_line,
+        "right": right_line,
+        "top": top_line,
+        "bottom": bottom_line,
+    }
+
+    def redraw_crop_guides():
+        left_line.set_xdata([crop_state["left"], crop_state["left"]])
+        right_line.set_xdata([crop_state["right"], crop_state["right"]])
+        top_line.set_ydata([crop_state["top"], crop_state["top"]])
+        bottom_line.set_ydata([crop_state["bottom"], crop_state["bottom"]])
+        fig.canvas.draw_idle()
+
+    def nearest_guide(event):
+        if event.inaxes != ax:
+            return None
+
+        if event.xdata is None or event.ydata is None:
+            return None
+
+        distances = {
+            "left": abs(event.xdata - crop_state["left"]),
+            "right": abs(event.xdata - crop_state["right"]),
+            "top": abs(event.ydata - crop_state["top"]),
+            "bottom": abs(event.ydata - crop_state["bottom"]),
+        }
+
+        closest = min(distances, key=distances.get)
+
+        if distances[closest] <= 10:
+            return closest
+
+        return None
+
+    def on_press(event):
+        crop_state["active_guide"] = nearest_guide(event)
+
+    def on_release(event):
+        crop_state["active_guide"] = None
+
+    def on_motion(event):
+        active = crop_state["active_guide"]
+
+        if active is None:
+            return
+
+        if event.inaxes != ax:
+            return
+
+        if event.xdata is None or event.ydata is None:
+            return
+
+        if active == "left":
+            crop_state["left"] = int(
+                max(0, min(event.xdata, crop_state["right"] - 1))
+            )
+
+        elif active == "right":
+            crop_state["right"] = int(
+                min(image.shape[1], max(event.xdata, crop_state["left"] + 1))
+            )
+
+        elif active == "top":
+            crop_state["top"] = int(
+                max(0, min(event.ydata, crop_state["bottom"] - 1))
+            )
+
+        elif active == "bottom":
+            crop_state["bottom"] = int(
+                min(image.shape[0], max(event.ydata, crop_state["top"] + 1))
+            )
+
+        redraw_crop_guides()
+
+    accept_ax = fig.add_axes([0.40, 0.04, 0.20, 0.06])
+    accept_button = Button(accept_ax, "Accept")
+
+    def accept_crop(_):
+        crop_state["accepted"] = True
+        plt.close(fig)
+
+    accept_button.on_clicked(accept_crop)
+
+    fig.canvas.mpl_connect("button_press_event", on_press)
+    fig.canvas.mpl_connect("button_release_event", on_release)
+    fig.canvas.mpl_connect("motion_notify_event", on_motion)
+
+    plt.show(block=True)
+
+    if not crop_state["accepted"]:
+        return None, None
+
+    rowrng = [crop_state["top"], crop_state["bottom"]]
+    colrng = [crop_state["left"], crop_state["right"]]
+
+    return rowrng, colrng    
     
 def collect_crop_bounds(image, dataset_folder_name):
     """
@@ -2276,11 +2450,11 @@ def select_tier_boundaries_by_prominence(mean_intensity_profile_z, peaks, peak_p
         )
 
     keep = np.argsort(internal_prominences)[-n_internal_needed:]
-    selected_internal = np.sort(internal_peaks[keep])
+    suggested_internal = np.sort(internal_peaks[keep])
 
     selected = np.concatenate((
         np.array([left_boundary]),
-        selected_internal,
+        suggested_internal,
         np.array([right_boundary])
     ))
 
@@ -2599,24 +2773,24 @@ def select_tier_boundaries_by_edge_and_score(
     n_to_select = min(len(internal_peaks), n_internal_needed)
 
     rank_order = np.argsort(internal_scores)[::-1]
-    selected_internal = internal_peaks[rank_order[:n_to_select]]
-    selected_internal = np.sort(selected_internal)
+    suggested_internal = internal_peaks[rank_order[:n_to_select]]
+    suggested_internal = np.sort(suggested_internal)
 
-    selected_boundaries = np.concatenate((
+    suggested_boundaries = np.concatenate((
         np.array([left_edge]),
-        selected_internal,
+        suggested_internal,
         np.array([right_edge])
     ))
 
     return {
-    "selected_boundaries": selected_boundaries.astype(int),
+    "suggested_boundaries": suggested_boundaries.astype(int),
     "left_edge": int(left_edge),
     "right_edge": int(right_edge),
-    "selected_internal": selected_internal.astype(int),
+    "suggested_internal": suggested_internal.astype(int),
     "candidate_peaks": candidate_peaks.astype(int),
     "internal_peaks_after_edge_removal": internal_peaks.astype(int),
     "n_internal_needed": int(n_internal_needed),
-    "n_internal_selected": int(len(selected_internal)),
+    "n_internal_selected": int(len(suggested_internal)),
 }
 
 
@@ -2687,13 +2861,13 @@ def select_tier_boundaries_by_edge_and_prominence(
         internal_prominences
     )[-n_internal_needed:]
 
-    selected_internal = np.sort(
+    suggested_internal = np.sort(
         internal_peaks[keep]
     )
 
     return np.concatenate((
         np.array([left_edge]),
-        selected_internal,
+        suggested_internal,
         np.array([right_edge]),
     )).astype(int)
 

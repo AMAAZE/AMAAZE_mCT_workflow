@@ -9,7 +9,7 @@ Guided intake step for the AMAAZE mCT surfacing workflow.
 
 This script interviews the user, checks the scan folder, slice folder,
 and layout CSV, confirms that supported slice files can be found and sorted,
-creates an output folder, and writes the first metadata file for the workflow.
+creates an output folder, and writes the first iteration of the metadata file for the workflow.
 """
 
 # ============================================================
@@ -19,43 +19,78 @@ creates an output folder, and writes the first metadata file for the workflow.
 from utils import *
 
 # ============================================================
-# Interview user about input data
+# Welcome to the workflow
 # ============================================================
+
 timer_00_start = timeit.default_timer()
 
-print()
-print("Welcome to the AMAAZE mCT surfacing workflow.")
-print("We are glad you are here.")
-print()
-print("Before we begin, we will ask a few questions about your data.")
-print()
+timer_00_start = timeit.default_timer()
 
+TOTAL_QUESTIONS_00 = 7
+
+print_terminal_header("Welcome to the AMAAZE mCT Surfacing Workflow")
+
+print("This workflow consists of five steps:")
 print()
+print("    1 Share Data")
+print("    2 Set Rotation & Crop")
+print("    3 Build Subvolume")
+print("    4 Segment")
+print("    5 Surface")
+print()
+print("You are currently completing Step 1.")
+print()
+print("When you're ready, press Enter to begin.")
+
+input("> ")
+
+# ============================================================
+# Request folder name
+# ============================================================
+
+print_question_header("Dataset Folder Name", 1, TOTAL_QUESTIONS_00)
+
 dataset_folder_name = ask_dataset_folder_name(
-    "What is the name of the folder where we can find the scan dataset we will be processing today?\n\n"
-    "Example:\n"
-    "CT_scan_01\n\n"
-    "This folder name is used to name workflow outputs. \n"
-    "If it is very long, your workflow output names will also be very long."    
+    "The dataset folder name is used to name workflow outputs.\n"
+    "Note: If it is very long, your workflow output names will also be very long.\n\n"
+    "Example:\n\n"
+    "    CT_scan_01\n\n"
+    "What is the name of the dataset folder we will be processing today?"
 )
 
-print()
+print_success(f"Dataset folder name recorded: {dataset_folder_name}")
+
+# ============================================================
+# Request data filepath
+# ============================================================
+
+print_question_header("Dataset Filepath", 2, TOTAL_QUESTIONS_00)
+
 scanpath = ask_existing_path(
     "What is the entire path to the folder for this scan dataset?\n"
     "Please include the dataset folder name itself in the path.\n\n"
-    "Example:\n"
-    "C:/MyProject/CT_scan_01 \n",
+    "Example:\n\n"
+    "    C:/MyProject/CT_scan_01",
     is_dir=True
 )
 
+print_success("Dataset folder found.")
+
+# ============================================================
+# Slice filepath request and verification
+# ============================================================
+
+print_question_header("Slice Filepath", 3, TOTAL_QUESTIONS_00)
 
 slicepath = ask_existing_path(
     "What is the full path to the folder containing the slice files?\n"
-    "Please include the slice folder itself in the path.\n"
-    "Example:\n"
-    "C:/MyProject/CT_scan_01/Slices",
+    "Please include the slice folder itself in the path.\n\n"
+    "Example:\n\n"
+    "    C:/MyProject/CT_scan_01/Slices",
     is_dir=True
 )
+
+print_success("Slice folder found.")
 
 supported_extensions = list(SUPPORTED_SLICE_EXTENSIONS)
 
@@ -80,7 +115,9 @@ while True:
         print("The slice folder could not be used.")
         print("Please check the folder path and slice files, then try again.")
         print()
-    
+
+        print_question_header("Slice Filepath", 3, TOTAL_QUESTIONS_00)
+
         slicepath = ask_existing_path(
             "What is the full path to the folder containing the slice files?",
             is_dir=True
@@ -102,10 +139,15 @@ while True:
         (np.diff(slice_indices) == 1).all()
     )
 
-    print()
+    print_question_header("Verify Slices", 4, TOTAL_QUESTIONS_00)
+
     print(f"We found {n_slices} supported slice files.")
-    print("First 5 slices:", [os.path.basename(f) for f in slice_files[:5]])
-    print("Last 5 slices:", [os.path.basename(f) for f in slice_files[-5:]])
+    print()
+    print("First 5 slices:")
+    print([os.path.basename(f) for f in slice_files[:5]])
+    print()
+    print("Last 5 slices:")
+    print([os.path.basename(f) for f in slice_files[-5:]])
     print()
     print("Slice filenames were sorted by the numeric index in each filename.")
 
@@ -121,31 +163,48 @@ while True:
         "Do these look like the correct slice files?",
         default="y"
     ):
+        print_success("Slice files verified.")
         break
 
     print()
     print("Let's try a different slice folder.")
     print()
 
+    print_question_header("Slice Filepath", 3, TOTAL_QUESTIONS_00)
+
     slicepath = ask_existing_path(
         "What is the full path to the folder containing the slice files?",
         is_dir=True
     )
 
+# ============================================================
+# Request CSV filepath
+# ============================================================
+
+print_question_header("CSV Filepath", 5, TOTAL_QUESTIONS_00)
+
 layoutfile = ask_existing_path(
+    "The layout CSV tells the workflow which specimens\n"
+    "are expected in the scan and where they are located within the scan.\n\n"
+    "The layout CSV should describe this dataset only and contain:\n\n"
+    "    Column 1: Tier number\n"
+    "    Column 2: Row number\n"
+    "    Column 3+: Specimen identifiers\n\n"
     "What is the path to the layout CSV file?\n"
-    "Please include the filename in the path.\n"
-    "This file tells the workflow which specimens are expected in the scan and where they are located within the scan. \n"
-    "The layout CSV should describe this dataset only and contain: \n"
-    "  Column 1: Tier number \n"
-    "  Column 2: Row number  \n"
-    "  Column 3+: Specimen identifiers\n",
+    "Please include the filename in the path.",
     is_dir=False
 )
 
 layout_filename = os.path.basename(layoutfile)
 
-print()
+print_success("Layout CSV found.")
+
+# ============================================================
+# Request voxel information
+# ============================================================
+
+print_question_header("Voxel Size", 6, TOTAL_QUESTIONS_00)
+
 print("Voxel information controls the real-world scale of your meshes.")
 print("If your scan is isotropic, voxel size and slice spacing are the same.")
 print()
@@ -155,7 +214,6 @@ voxel_size_mm = ask(
     cast=float
 )
 
-print()
 is_isotropic = ask_yes_no(
     "Is the scan isotropic, meaning slice spacing equals in-plane voxel size?",
     default="y"
@@ -163,38 +221,48 @@ is_isotropic = ask_yes_no(
 
 if is_isotropic:
     voxel_spacing_mm = None
+    print_success("Voxel size recorded. Slice spacing will use the same value.")
 else:
     voxel_spacing_mm = ask(
         "What is the slice spacing in mm?",
         cast=float
     )
+    print_success("Voxel size and slice spacing recorded.")
 
 output_path = create_output_folder(scanpath, dataset_folder_name)
 
 print()
-print(f"All workflow outputs will be saved here:")
-print(output_path)
+print("All workflow outputs will be saved here:")
+print()
+print(f"    {output_path}")
 print()
 
-print(
-    "Now you need to choose a repesesntative slice from the slice folder for previewing. \n" 
-    "The next step in the workflow will ask you to compare that slice to the layout CSV, \n"
-    "and then based on what you see, select a few settings."
-)
+# ============================================================
+# Select representative slice
+# ============================================================
 
-print()
+print_question_header("Representative Slice", 7, TOTAL_QUESTIONS_00)
+
 slice_index_fraction = ask_float_in_range(
-    "Choose a representative slice for previewing in the next step.\n"
-    "This should land near the middle of a tier that contains specimens.\n"
-    "For one occupied tier, 0.50 is often good. For two occupied tiers, 0.25 or 0.75 may be better.\n"
-    "Avoid choosing a value that falls within an empty tier.\n"
-    "If the scan appears upside down relative to the layout later, we will correct that later in the workflow.\n"
-    "The default is 0.50. Press Enter to accept the default, or type a different value.",
+    "The next step in the workflow will ask you to compare\n"
+    "a representative slice to the layout CSV,\n"
+    "and then based on what you see, select a few settings.\n\n"
+    "The representative slice should land near the middle of a tier that contains specimens.\n\n"
+    "    For one occupied tier, 0.50 is often good.\n"
+    "    For two occupied tiers, 0.25 or 0.75 may be better.\n"
+    "    Avoid choosing a value that falls within an empty tier.\n\n"
+    "Note: If the scan appears upside down relative to the layout later,\n"
+    "we will correct that later in the workflow.\n\n"
+    "Choose a representative slice.\n\n"
+    "Default: 0.50\n\n"
+    "Press Enter to accept the default,\n"
+    "or type a different value.",
     minimum=0.0,
     maximum=1.0,
     default=0.50
 )
 
+print_success(f"Representative slice fraction recorded: {slice_index_fraction}")
 
 timer_00_stop = timeit.default_timer()
 
@@ -203,7 +271,6 @@ timer_00_stop = timeit.default_timer()
 # ============================================================
 
 runtime_00_seconds = timer_00_stop - timer_00_start
-print("00_share_data.py runtime: ", runtime_00_seconds)
 
 # ============================================================
 # Create metadata file and dictionaries
@@ -262,15 +329,24 @@ save_metadata(metadata_path, metadata)
 # Confirm completion
 # ============================================================
 
-print()
+print_step_complete_header("Step 1 Complete")
+
 print("Thank you for sharing the data.")
 print()
 print("Setup complete.")
-print(f"Metadata saved to:")
-print(metadata_path)
 print()
-print("Use this metadata JSON to continue the workflow later.")
+print(f"Setup took {format_runtime(runtime_00_seconds)} to complete.")
 print()
+print("Metadata saved to:")
+print()
+print(f"    {metadata_path}")
+print()
+print("Important: Use this metadata JSON to continue the workflow later.")
+print()
+
+# ============================================================
+# Initiate next step
+# ============================================================
 
 ask_run_next_step("01_set_rotation_crop.py", metadata_path)
 

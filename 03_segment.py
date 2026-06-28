@@ -177,7 +177,7 @@ tier_boundary_result = select_tier_boundaries_by_edge_and_score(
     n_tiers=n_tiers,
 )
 
-suggested_tier_boundaries = tier_boundary_result["selected_boundaries"]
+suggested_tier_boundaries = tier_boundary_result["suggested_boundaries"]
 left_edge = tier_boundary_result["left_edge"]
 right_edge = tier_boundary_result["right_edge"]
 suggested_internal = tier_boundary_result["suggested_internal"]
@@ -649,10 +649,18 @@ for i, normalized_image in enumerate(normalized_tier_images):
     axs[0].plot(row_occupancy)
 
     axs[0].axhline(
+        row_starting_threshold,
+        color="orange",
+        linestyle=":",
+        linewidth=2,
+        label=f"starting threshold = {row_starting_threshold:.2f}"
+    )
+
+    axs[0].axhline(
         row_min_fraction,
         color="red",
         linestyle="--",
-        label=f"threshold = {row_min_fraction:.2f}"
+        label=f"final threshold = {row_min_fraction:.2f}"
     )
 
     axs[0].scatter(
@@ -663,13 +671,22 @@ for i, normalized_image in enumerate(normalized_tier_images):
         label="candidates"
     )
 
-    for band in row_candidate_bands:
-        axs[0].axvspan(
-            band[0],
-            band[-1],
-            alpha=0.2
-    )
+    for i, band in enumerate(row_candidate_bands):
 
+        left = band[0]
+        right = band[-1]
+
+        if left == right:
+            left -= 0.5
+            right += 0.5
+
+        axs[0].axvspan(
+            left,
+            right,
+            alpha=0.2,
+            label="possible divider region" if i == 0 else None,
+        )
+    
     axs[0].set_title("Row occupancy profile")
     axs[0].set_xlabel("row index")
     axs[0].set_ylabel("occupancy")
@@ -679,10 +696,18 @@ for i, normalized_image in enumerate(normalized_tier_images):
     axs[1].plot(col_occupancy)
 
     axs[1].axhline(
+        col_starting_threshold,
+        color="orange",
+        linestyle=":",
+        linewidth=2,
+        label=f"starting threshold = {col_starting_threshold:.2f}"
+    )
+    
+    axs[1].axhline(
         col_min_fraction,
         color="red",
         linestyle="--",
-        label=f"threshold = {col_min_fraction:.2f}"
+        label=f"final threshold = {col_min_fraction:.2f}"
     )
 
     axs[1].scatter(
@@ -693,12 +718,21 @@ for i, normalized_image in enumerate(normalized_tier_images):
         label="candidates"
     )
 
-    for band in col_candidate_bands:
+    for i, band in enumerate(col_candidate_bands):
+
+        left = band[0]
+        right = band[-1]
+
+        if left == right:
+            left -= 0.5
+            right += 0.5
+
         axs[1].axvspan(
-            band[0],
-            band[-1],
-            alpha=0.2
-    )
+            left,
+            right,
+            alpha=0.2,
+            label="possible divider region" if i == 0 else None,
+        )
 
     axs[1].set_title("Column occupancy profile")
     axs[1].set_xlabel("column index")

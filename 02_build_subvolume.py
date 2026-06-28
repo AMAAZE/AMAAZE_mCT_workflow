@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 
 """
-02_build_volume.py
+02_build_subvolume.py
 
 Original processing logic: RileyWilde
 Refactoring and workflow design: Katrina E. Yezzi-Woodley
 
-Load all CT slices, apply the rotation and cropping defined in previous step,
-and construct a subsampled 3D volume by averaging slices in z-windows.
+Automated reduced-volume construction step for the AMAAZE mCT
+surfacing workflow.
 
-Each averaged slice is resized with aspect-ratio preservation,
-using a maximum edge length of 225 pixels for computational efficiency.
+This script loads one or more workflow metadata JSON files, reads the
+corresponding CT slice stacks, applies the orientation and crop selected
+in the previous step, and constructs a reduced working volume by averaging
+slices within the chosen z-window.
 
-The resulting volume is saved to an .npz and the metadata file is updated
-for downstream segmentation and extraction.
+Each averaged slice is resized with aspect-ratio preservation using a
+maximum edge length of 225 pixels for computational efficiency.
+
+The resulting subvolume is saved as an .npz file, and the workflow metadata
+is updated for downstream segmentation and extraction.
 """
 
 # ============================================================
@@ -25,6 +30,28 @@ from utils import *
 # ============================================================
 # Load metadata
 # ============================================================
+
+preview_parser = argparse.ArgumentParser(add_help=False)
+preview_parser.add_argument("--metadata_path", default=None)
+preview_args, _ = preview_parser.parse_known_args()
+
+started_automatically = preview_args.metadata_path is not None
+
+if not started_automatically:
+    print_terminal_header("Step 3 of 5: Build Reduced Working Volume")
+
+    print("This step builds the reduced working volume used for segmentation.")
+    print()
+    print("First, you will choose whether to process one workflow")
+    print("or multiple workflows in batch mode.")
+    print()
+    print("Then, you will provide the metadata JSON file")
+    print("for each workflow you choose to process.")
+    print()
+    print("When you're ready, press Enter to begin.")
+    input("> ")
+
+    print_question_header("Workflow Selection")
 
 metadata_paths = get_metadata_paths_from_command_line_or_user(
     step_name="02_build_subvolume",
@@ -118,7 +145,7 @@ for metadata_path in metadata_paths:
 # ============================================================
 
     runtime_02_seconds = timer_02_stop - timer_02_start
-    print("02_build_subvolume.py runtime: ", runtime_02_seconds)
+
 
 # ============================================================
 # Update metadata
@@ -144,10 +171,19 @@ for metadata_path in metadata_paths:
 # ============================================================
 # Confirm completion
 # ============================================================
+    print_step_complete_header("Step 3 Complete")
+
+    print("Reduced working volume created.")
     print()
-    print("Subvolume created.")
+    print(f"Subvolume building took {format_runtime(runtime_02_seconds)} to complete.")
+    print()
+    print("Subvolume saved to:")
+    print()
+    print(f"    {subvolume_file}")
+    print()
     print("Metadata updated:")
-    print(metadata_path)
+    print()
+    print(f"    {metadata_path}")
     print()
 
     if len(metadata_paths) == 1:
@@ -159,17 +195,4 @@ for metadata_path in metadata_paths:
         print("    python 03_segment.py")
         print("individually for each workflow that needs interactive segmentation.")
         print()
-
-
-
-
-
-
-
-
-
-
-
-
-
 
