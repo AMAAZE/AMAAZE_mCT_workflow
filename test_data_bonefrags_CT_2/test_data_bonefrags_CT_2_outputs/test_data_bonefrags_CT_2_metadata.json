@@ -1,96 +1,113 @@
 {
+  "workflow_runtimes": {
+    "runtime_00_seconds": 72.07452437002212,
+    "runtime_01_seconds": 67.79307624697685,
+    "runtime_02_seconds": 8.35446907300502,
+    "runtime_03_seconds": 42.88410045392811
+  },
   "00_share_data": {
     "status": "complete",
-    "dataset_folder_name": "test_data_bonefrags_CT_2",
-    "scanpath": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2",
-    "slicepath": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\Slices_cropped",
-    "layoutfile": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\layout_bone_data_cropped.csv",
-    "output_path": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\test_data_bonefrags_CT_2_outputs",
-    "metadata_path": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\test_data_bonefrags_CT_2_outputs\\test_data_bonefrags_CT_2_metadata.json",
-    "supported_extensions": [
-      ".tif",
-      ".tiff",
-      ".dcm",
-      ".dicom"
-    ],
-    "n_slices": 3439,
-    "total_slice_bytes": 72095196,
-    "total_slice_gb": 0.06714388355612755,
-    "first_slice": "AMAAZE_2_Y_0001.tif",
-    "last_slice": "AMAAZE_2_Y_3439.tif",
-    "first_slice_index": 1,
-    "last_slice_index": 3439,
-    "slice_indices_are_consecutive": true,
-    "slice_index_fraction": 0.18,
-    "voxel_size_mm": 0.046,
-    "voxel_spacing_mm": 0.0046,
-    "is_isotropic": false,
-    "runtime_seconds": 67.65034519997425
+    "data_locations": {
+      "dataset_folder_name": "test_data_bonefrags_CT_2",
+      "scanpath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2",
+      "slicepath": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/Slices_cropped",
+      "layout_filename": "layout_bone_data_cropped.csv",
+      "layoutfile": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/layout_bone_data_cropped.csv",
+      "output_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs",
+      "metadata_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/test_data_bonefrags_CT_2_metadata.json"
+    },
+    "slice_inventory": {
+      "first_slice": "AMAAZE_2_Y_0001.tif",
+      "first_slice_index": 1,
+      "last_slice": "AMAAZE_2_Y_3439.tif",
+      "last_slice_index": 3439,
+      "n_slices": 3439,
+      "slice_index_fraction": 0.18,
+      "slice_indices_are_consecutive": true,
+      "supported_extensions": [
+        ".tif",
+        ".tiff",
+        ".dcm",
+        ".dicom"
+      ],
+      "total_slice_bytes": 72095196,
+      "total_slice_gb": 0.06714388355612755
+    },
+    "voxel_information": {
+      "is_isotropic": false,
+      "voxel_size_mm": 0.046,
+      "voxel_spacing_mm": 0.0046
+    }
   },
   "01_set_rotation_crop": {
     "status": "complete",
     "transpose_preview": true,
-    "rotation_angle": -89.99999999999989,
+    "rotation_angle": -90.0,
     "rowrng": [
-      0,
-      60
+      3,
+      59
     ],
     "colrng": [
-      0,
-      165
+      2,
+      164
     ],
-    "runtime_seconds": 65.60083060001489
+    "zwindow": 20
   },
   "02_build_subvolume": {
     "status": "complete",
-    "zwindow": 20,
+    "max_edge": 225,
     "remainder": 19,
-    "subvolume_file": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\test_data_bonefrags_CT_2_outputs\\test_data_bonefrags_CT_2_subvolume.npz",
+    "subvolume_file": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/test_data_bonefrags_CT_2_subvolume.npz",
     "entire_subvolume_shape": [
       172,
-      82,
+      78,
       225
     ],
     "subvolume_slice_shape": [
-      82,
+      78,
       225
-    ],
-    "runtime_seconds": 39.181544599938206
+    ]
   },
   "03_segment": {
     "status": "complete",
-    "extraction_plan_csv": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\test_data_bonefrags_CT_2_outputs\\test_data_bonefrags_CT_2_extraction_plan.csv",
-    "n_tiers_expected": 2,
-    "n_active_tiers": 2,
     "n_expected_specimens": 8,
-    "n_extracted_specimens": 8,
-    "n_extraction_regions": 8,
     "tier_segmentation": {
-      "tier_boundaries": [
+      "n_tiers_expected": 2,
+      "n_detected_tiers": 2,
+      "left_edge": 3,
+      "right_edge": 171,
+      "suggested_internal": [
+        82
+      ],
+      "suggested_tier_boundaries": [
         3,
-        83,
+        82,
         171
       ],
-      "n_detected_tiers": 2,
+      "finalized_tier_boundaries": [
+        3,
+        82,
+        171
+      ],
       "tier_detection_method": "automatic_peaks",
-      "reverse_detected_tier_order": true,
+      "n_active_tiers": 2,
       "active_tier_indices": [
         0,
         1
       ],
-      "active_tier_ranges": [
+      "active_tier_zranges": [
         [
-          83,
+          82,
           171
         ],
         [
           3,
-          83
+          82
         ]
-      ]
+      ],
+      "reverse_detected_tier_order": true
     },
     "tier_normalization": {
-      "rotation_method": "estimate_grid_rotation_by_coherence",
       "angle_min": -5,
       "angle_max": 5,
       "angle_step": 0.25,
@@ -101,7 +118,7 @@
           "angle_min": -5,
           "angle_max": 5,
           "angle_step": 0.25,
-          "best_score": 0.7198134686743135
+          "best_score": 0.7247535567029133
         },
         {
           "tier_id": 2,
@@ -109,56 +126,28 @@
           "angle_min": -5,
           "angle_max": 5,
           "angle_step": 0.25,
-          "best_score": 0.6317390454703036
+          "best_score": 0.6446485495611816
         }
       ]
     },
-    "divider_review": {
-      "review_method": "automated_proposal_with_manual_override",
-      "tier_divider_definitions": [
-        {
-          "tier_id": 1,
-          "proposed_row_dividers": [
-            50
-          ],
-          "proposed_col_dividers": [
-            71,
-            144
-          ],
-          "final_row_dividers": [
-            50
-          ],
-          "final_col_dividers": [
-            71,
-            144
-          ],
-          "divider_method": "automatic_accepted"
-        },
-        {
-          "tier_id": 2,
-          "proposed_row_dividers": [
-            44
-          ],
-          "proposed_col_dividers": [
-            77,
-            150
-          ],
-          "final_row_dividers": [
-            44
-          ],
-          "final_col_dividers": [
-            77,
-            150
-          ],
-          "divider_method": "automatic_accepted"
-        }
-      ],
-      "peak_diagnostics_csv": "I:\\AISOS_Users\\AISOS_AMAAZE_mCT_workspace\\AMAAZE_mCT_workflow\\test_data_bonefrags_CT_2\\test_data_bonefrags_CT_2_outputs\\test_data_bonefrags_CT_2_peak_diagnostics.csv"
+    "extraction_plan": {
+      "n_extracted_specimens": 8,
+      "n_extraction_regions": 8,
+      "extraction_plan_csv": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/test_data_bonefrags_CT_2_extraction_plan.csv"
+    },
+    "diagnostic_outputs": {
+      "diagnostic_figures_path": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/03_diagnostic_figures",
+      "peak_diagnostics_csv": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/test_data_bonefrags_CT_2_peak_diagnostics.csv",
+      "tier_divider_proposals_csv": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/test_data_bonefrags_CT_2_tier_divider_proposals.csv",
+      "tier_divider_finalized_definitions_csv": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_bonefrags_CT_2/test_data_bonefrags_CT_2_outputs/test_data_bonefrags_CT_2_tier_divider_finalized_definitions.csv"
     },
     "surfacing_setup": {
       "iso": 15000.0,
       "padding": 5
     },
-    "runtime_seconds": 38.23370900005102
+    "mesh_cleaning_parameters": {
+      "dust_cutoff": 20,
+      "hole_tolerance": 0
+    }
   }
 }

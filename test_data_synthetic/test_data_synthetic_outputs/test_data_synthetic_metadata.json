@@ -1,8 +1,8 @@
 {
   "workflow_runtimes": {
     "runtime_00_seconds": 258.5210505919531,
-    "runtime_01_seconds": 19.193343768129125,
-    "runtime_02_seconds": 0.6248284059111029
+    "runtime_01_seconds": 65.05213106307201,
+    "runtime_02_seconds": 1.4318558010272682
   },
   "00_share_data": {
     "status": "complete",
@@ -43,11 +43,11 @@
     "transpose_preview": false,
     "rotation_angle": 0.0,
     "rowrng": [
-      35,
+      38,
       318
     ],
     "colrng": [
-      35,
+      37,
       318
     ],
     "zwindow": 20
@@ -59,11 +59,11 @@
     "subvolume_file": "/data/1_current_projects/AMAAZE_mCT_workspace/AMAAZE_mCT_workflow/test_data_synthetic/test_data_synthetic_outputs/test_data_synthetic_subvolume.npz",
     "entire_subvolume_shape": [
       23,
-      225,
+      224,
       225
     ],
     "subvolume_slice_shape": [
-      225,
+      224,
       225
     ]
   }

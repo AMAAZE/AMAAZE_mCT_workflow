@@ -1,0 +1,3 @@
+tier_id,proposed_row_dividers,proposed_col_dividers,final_row_dividers,final_col_dividers,divider_method
+1,[46],"[69, 144]",[47],"[69, 144]",manual_override
+2,[40],"[76, 150]",[40],"[76, 150]",automatic_accepted

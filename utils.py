@@ -1118,8 +1118,7 @@ def apply_preview_rotation(im, angle_deg):
         resize=True,
         preserve_range=True
     )
-#############################################################
-#############################################################
+
 def choose_rotation_angle_interactively(
     raw_image,
     dataset_folder_name
@@ -1684,48 +1683,6 @@ def estimate_occupancy_threshold_by_peak_distance(
 
     return starting_threshold, final_threshold, all_peak_counts, retained_threshold_peaks, peak_summaries
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def estimate_occupancy_threshold_by_prominence_gap(
     occupancy,
     min_prominence=0,
@@ -1874,25 +1831,6 @@ def estimate_occupancy_threshold_by_prominence_gap(
         })
 
     return threshold, peak_summaries, pop_cutoff, occupancy_for_peaks
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def occupancy_threshold_landscape(
     occupancy,
@@ -2390,20 +2328,6 @@ def summarize_plausible_regions(
         })
 
     return region_summaries
-
-
-
-
-
-
-###########################################################
-
-
-
-
-
-
-
 
 # ============================================================
 # FUNCTIONS USED BY 03_segment.py
@@ -3279,16 +3203,6 @@ def split_neighborhood_into_edge_sets(neighborhood, max_value=None):
 
 from itertools import combinations
 
-
-
-
-
-
-
-
-
-
-
 def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, axis_length=None, return_score=False):
     band_centers = np.array(band_centers).astype(float)
 
@@ -3367,11 +3281,6 @@ def select_best_nonoverlapping_pair_set(band_centers, expected_n_pairs=None, axi
         return pairs, best_score
 
     return pairs
-
-
-
-
-
 
 def generate_split_band_center_scenarios(candidate_bands, expected_n_pairs):
 
@@ -3466,8 +3375,6 @@ def paired_edge_centerlines(binary_mask, axis_label, min_fraction=0.45, min_pair
         max_band_gap=2
     )
 
-#######################
-
     edge_center_scenarios = generate_split_band_center_scenarios(
         candidate_bands,
         expected_n_pairs=expected_n_pairs
@@ -3500,136 +3407,13 @@ def paired_edge_centerlines(binary_mask, axis_label, min_fraction=0.45, min_pair
         for pair in pairs
     ]
 
-##############################
-
-#    pairs = select_best_nonoverlapping_pair_set(
-#        band_centers,
-#        expected_n_pairs=expected_n_pairs
-#    )
-
     print()
     print(f"{axis_label.upper()} DIAGNOSTICS")
     print("band_centers:", band_centers)
     print("expected_n_pairs:", expected_n_pairs)
     print("selected_pairs:", pairs)
 
-#    centerlines = [
-#        int(round((pair[0] + pair[1]) / 2))
-#        for pair in pairs
-#    ]
-#
-#    pairs = []
-#    centerlines = []
-#
-#    used = set()
-#
-#    for idx in band_centers:
-#        idx = float(idx)
-#
-#        possible = band_centers[
-#            (band_centers >= idx + min_pair_gap) &
-#            (band_centers <= idx + max_pair_gap)
-#        ]
-#
-#        if len(possible) == 0:
-#            continue
-#
-#       partner = float(possible[0])
-#
-#        pairs.append([float(idx), partner])
-#        centerlines.append(int(round((idx + partner) / 2)))
-#
-#        used.add(int(idx))
-#        used.add(partner)
-
     return centerlines, pairs, occupancy, candidate_idxs, candidate_bands, band_centers
-
-
-
-def review_dividers(
-    image,
-    proposed_rows=None,
-    proposed_cols=None,
-    title="Review divider locations"
-):
-    """
-    Review, accept, add, or replace divider locations.
-
-    ENTER with no clicks:
-        accept proposed dividers
-
-    Click:
-        create a completely new divider set
-    """
-
-    if proposed_rows is None:
-        proposed_rows = []
-
-    if proposed_cols is None:
-        proposed_cols = []
-
-    fig, ax = plt.subplots()
-
-    ax.imshow(image, cmap="gray")
-    ax.set_title(f"{ask_dataset_folder_name}\n{title}")
-
-    for r in proposed_rows:
-        ax.axhline(r, color="lime", linestyle="--")
-
-    for c in proposed_cols:
-        ax.axvline(c, color="lime", linestyle="--")
-
-    clicked_rows = []
-    clicked_cols = []
-
-    def on_divider_review_click(event):
-
-        if event.inaxes != ax:
-            return
-
-        if event.button == 1:
-            row = int(round(event.ydata))
-            clicked_rows.append(row)
-            print(f"Row divider {len(clicked_rows)}: {row}")
-            ax.axhline(row, color="red")
-            fig.canvas.draw_idle()
-
-        elif event.button == 3:
-            col = int(round(event.xdata))
-            clicked_cols.append(col)
-            print(f"Column divider {len(clicked_cols)}: {col}")
-            ax.axvline(col, color="blue")
-            fig.canvas.draw_idle()
-
-    fig.canvas.mpl_connect("button_press_event", on_divider_review_click)
-
-    plt.show(block=False)
-
-    input(
-        "\nENTER = accept proposed dividers\n"
-        "Left click = row divider\n"
-        "Right click = column divider\n"
-        "Press ENTER when finished.\n"
-    )
-    
-    plt.close(fig)
-
-    if len(clicked_rows) == 0:
-        final_rows = np.array(proposed_rows).astype(int)
-    else:
-        final_rows = np.sort(np.array(clicked_rows).astype(int))
-
-    if len(clicked_cols) == 0:
-        final_cols = np.array(proposed_cols).astype(int)
-    else:
-        final_cols = np.sort(np.array(clicked_cols).astype(int))
-
-    print("\nFinal divider selection:")
-    print("Rows:", final_rows)
-    print("Cols:", final_cols)
-
-    return final_rows, final_cols
-
 
 def score_axis_coherence(im):
     """
@@ -3689,7 +3473,8 @@ def collapse_candidate_bands(candidate_idxs, max_band_gap=2):
 
     return bands, band_centers
 
-def collect_tier_boundary_clicks(fig, ax):
+
+def collect_tier_boundary_clicks_legacy(fig, ax):
     clicked_x = []
 
     def on_tier_boundary_click(event):
@@ -3877,7 +3662,6 @@ def extract_specimen_subvolume_slice(
                 specimen_col_bounds[0]:specimen_col_bounds[1]
             ][None, :, :]
         )
-
 
 # ============================================================
 # FUNCTIONS USED BY 05_clean_meshes.py
@@ -4097,9 +3881,1782 @@ def choose_parallel_cores(
         "num_cores": num_cores,
         "method": method,
     }
+
+def _create_tier_boundary_review_figure(
+    dataset_folder_name,
+    z_reduced,
+    shifted_mean_intensity_profile_z,
+    candidate_peaks,
+    detected_left_edge,
+    detected_right_edge,
+    suggested_boundaries,
+    expected_n_boundaries,
+    zwindow,
+    n_slices,
+):
+    """
+    Create the tier-boundary review interface.
+
+    The left panel is a static diagnostic view showing the intensity profile,
+    candidate peaks, and independently detected package edges.
+
+    The right panel displays the algorithm's proposed tier boundaries.
+    This panel will later become interactive during manual review.
+
+    No user interaction is handled here.
+    """
+
+    fig, axs = plt.subplots(
+        1,
+        2,
+        figsize=(16, 4),
+        sharey=True,
+    )
+
+    # ==========================================================
+    # Left panel
+    # ==========================================================
+
+    axs[0].plot(
+        z_reduced,
+        shifted_mean_intensity_profile_z,
+    )
+
+    axs[0].plot(
+        candidate_peaks,
+        shifted_mean_intensity_profile_z[candidate_peaks],
+        "ro",
+        label="candidate peaks",
+    )
+
+    axs[0].axvline(
+        detected_left_edge,
+        color="purple",
+        linestyle="--",
+        linewidth=2,
+        label="detected package edges",
+    )
+
+    axs[0].axvline(
+        detected_right_edge,
+        color="purple",
+        linestyle="--",
+        linewidth=2,
+    )
+
+    axs[0].set_xlabel("Slice height (z)")
+    axs[0].set_ylabel("Shifted mean intensity")
+    axs[0].set_title("Candidate peaks and detected package edges")
+
+    axs[0].legend()
+
+    # ==========================================================
+    # Right panel
+    # ==========================================================
+
+    axs[1].plot(
+        z_reduced,
+        shifted_mean_intensity_profile_z,
+    )
+
+    for i, boundary in enumerate(suggested_boundaries):
+        line = axs[1].axvline(
+            boundary,
+            color="green",
+            linestyle="--",
+            linewidth=2,
+            label="suggested boundaries" if i == 0 else None,
+        )
+        
+        line._review_boundary = True
+
+    handles, labels = axs[1].get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+
+    axs[1].legend(
+        by_label.values(),
+        by_label.keys(),
+    )
+
+    axs[1].set_xlabel("Slice height (z)")
+    axs[1].set_title("Suggested tier boundaries")
+
+    # ==========================================================
+    # Overall figure
+    # ==========================================================
+
+    fig.suptitle(
+        f"{dataset_folder_name} | Tier segmentation review\n"
+        f"(z-window: {zwindow}, "
+        f"original slices: {n_slices})"
+    )
+
+    fig.tight_layout(
+        rect=[0, 0.10, 1, 0.90]
+    )
     
+    # ==========================================================
+    # Buttons
+    # ==========================================================
+
+    accept_ax = fig.add_axes([0.78, 0.02, 0.09, 0.06])
+    reset_ax  = fig.add_axes([0.89, 0.02, 0.09, 0.06])
+
+    accept_button = Button(
+        accept_ax,
+        "Accept",
+    )
+
+    reset_button = Button(
+        reset_ax,
+        "Reset",
+    )
     
+    counter_text = fig.text(
+        0.63,
+        0.05,
+        f"Selected: 0 of {expected_n_boundaries}",
+        fontsize=10,
+    )
+
+    return (
+        fig,
+        axs,
+        accept_button,
+        reset_button,
+        counter_text,
+    )
     
+def _draw_manual_boundaries(
+    fig,
+    ax,
+    manual_boundaries,
+):
+    """
+    Update the right panel of the tier-boundary review.
+
+    If no manual boundaries have been defined, the figure is left
+    unchanged.
+
+    Otherwise, all suggested boundaries are removed and replaced with
+    the current manual boundary set.
+    """
+
+    if len(manual_boundaries) == 0:
+        fig.canvas.draw_idle()
+        return
+
+    # ----------------------------------------------------------
+    # Sort manual boundaries
+    # ----------------------------------------------------------
+
+    manual_boundaries = np.sort(
+        np.asarray(manual_boundaries)
+    )
+
+    # ----------------------------------------------------------
+    # Draw manual boundaries
+    # ----------------------------------------------------------
+
+    for i, boundary in enumerate(manual_boundaries):
+
+        line = ax.axvline(
+            boundary,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label="manual boundaries" if i == 0 else None,
+        )
+
+        line._review_boundary = True
+
+    # ----------------------------------------------------------
+    # Refresh legend
+    # ----------------------------------------------------------
+
+    handles, labels = ax.get_legend_handles_labels()
+
+    by_label = dict(zip(labels, handles))
+
+    ax.legend(
+        by_label.values(),
+        by_label.keys(),
+    )
+
+    fig.canvas.draw_idle()
     
+def _reset_tier_boundary_review(
+    fig,
+    ax,
+    manual_boundaries,
+    suggested_boundaries,
+    counter_text,
+    expected_n_boundaries,
+):
+    """
+    Restore the tier-boundary review to its original state.
+
+    All manual boundaries are removed and the algorithm's suggested
+    boundaries are restored. The review window should appear exactly
+    as it did when it was first opened.
+    """
+
+    # ----------------------------------------------------------
+    # Clear manual boundaries
+    # ----------------------------------------------------------
+
+    manual_boundaries.clear()
+
+    # ----------------------------------------------------------
+    # Remove existing review boundaries
+    # ----------------------------------------------------------
+
+    for line in list(ax.lines):
+
+        if getattr(line, "_review_boundary", False):
+            line.remove()
+
+    # ----------------------------------------------------------
+    # Restore suggested boundaries
+    # ----------------------------------------------------------
+
+    for i, boundary in enumerate(suggested_boundaries):
+
+        line = ax.axvline(
+            boundary,
+            color="green",
+            linestyle="--",
+            linewidth=2,
+            label="suggested boundaries" if i == 0 else None,
+        )
+
+        line._review_boundary = True
+
+    # ----------------------------------------------------------
+    # Refresh legend
+    # ----------------------------------------------------------
+
+    handles, labels = ax.get_legend_handles_labels()
+
+    by_label = dict(zip(labels, handles))
+
+    ax.legend(
+        by_label.values(),
+        by_label.keys(),
+    )
+
+    counter_text.set_text(
+        f"Selected: 0 of {expected_n_boundaries}"
+    )
+
+    fig.canvas.draw_idle()   
     
+    print()
+    print("Review has been reset.")
+    print("Suggested boundaries have been restored.")
+    print()
     
+def _save_tier_boundary_review(
+    fig,
+    output_path,
+    stage,
+):
+    """
+    Save a tier-boundary review figure.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        Tier-boundary review figure.
+
+    output_path : str or Path
+        Output directory for diagnostic figures.
+
+    stage : {"suggested", "accepted"}
+        Review stage to save.
+    """
+
+    if stage == "suggested":
+
+        filename = "tier_boundary_review_suggested.png"
+
+    elif stage == "accepted":
+
+        filename = "tier_boundary_review_accepted.png"
+
+    else:
+
+        raise ValueError(
+            f"Unknown review stage: {stage}"
+        )
+
+    fig.savefig(
+        os.path.join(
+            output_path,
+            filename,
+        ),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    print(
+        f"Saved tier-boundary review: {filename}"
+    )    
+
+def _validate_manual_boundaries(
+    manual_boundaries,
+    suggested_boundaries,
+    max_boundary_value,
+):
+    """
+    Validate and finalize the selected tier boundaries.
+
+    If no manual boundaries have been defined, the algorithm's suggested
+    boundaries are returned.
+
+    Otherwise, the manual boundaries are sorted, clipped to the valid
+    range, and returned.
+
+    Returns
+    -------
+    final_boundaries : ndarray
+        Final tier boundaries to use.
+
+    tier_detection_method : str
+        "automatic_peaks" or "manual_override".
+    """
+
+    # ----------------------------------------------------------
+    # Automatic solution accepted
+    # ----------------------------------------------------------
+
+    if len(manual_boundaries) == 0:
+
+        return (
+            np.asarray(suggested_boundaries),
+            "automatic_peaks",
+        )
+
+    # ----------------------------------------------------------
+    # Manual solution
+    # ----------------------------------------------------------
+
+    final_boundaries = np.asarray(
+        manual_boundaries,
+        dtype=int,
+    )
+
+    final_boundaries = np.clip(
+        final_boundaries,
+        0,
+        max_boundary_value,
+    )
+
+    final_boundaries = np.sort(
+        final_boundaries
+    )
+
+    return (
+        final_boundaries,
+        "manual_override",
+    )
+
+def _show_tier_boundary_review(
+    fig,
+    ax,
+    accept_button,
+    reset_button,
+    counter_text,
+    manual_boundaries,
+    suggested_boundaries,
+    expected_n_boundaries,
+    max_boundary_value,
+):
+    """
+    Run the interactive tier-boundary review.
+
+    Handles:
+        - mouse clicks
+        - Accept
+        - Reset
+        - window closing
+
+    Returns only after the user explicitly clicks Accept.
+    """
+
+    accepted = False
+
+    # ----------------------------------------------------------
+    # Mouse-click callback
+    # ----------------------------------------------------------
+
+    def on_click(event):
+        """
+        Handle mouse clicks on the tier-boundary review.
+
+        The first manual click replaces the algorithm's suggested
+        boundaries with a manual boundary set. Subsequent clicks
+        add additional manual boundaries.
+
+        The displayed manual boundaries are automatically sorted
+        after every click.
+        """
+
+        # ------------------------------------------------------
+        # Ignore clicks outside the review axis
+        # ------------------------------------------------------
+
+        if event.inaxes != ax:
+            return
+
+        if event.xdata is None:
+            return
+
+        # ------------------------------------------------------
+        # Begin manual review
+        # ------------------------------------------------------
+
+        first_click = (len(manual_boundaries) == 0)
+
+        manual_boundaries.append(
+            int(round(event.xdata))
+        )
+        
+        manual_boundaries.sort()
+        
+        counter_text.set_text(
+            f"Selected: {len(manual_boundaries)} of {expected_n_boundaries}"
+        )
+
+        _draw_manual_boundaries(
+            fig,
+            ax,
+            manual_boundaries,
+        )
+
+        # ------------------------------------------------------
+        # Terminal feedback
+        # ------------------------------------------------------
+
+        if first_click:
+
+            print()
+            print("Manual review active.")
+            print(
+                "Suggested boundaries have been replaced."
+            )
+            print()
+
+        print(
+            f"Selected {len(manual_boundaries)} "
+            f"of {expected_n_boundaries} boundaries."
+        )
+
+        if len(manual_boundaries) == expected_n_boundaries:
+
+            print()
+            print(
+                f"All {expected_n_boundaries} boundaries "
+                "have been selected."
+            )
+            print(
+                "Review the figure and click Accept if "
+                "you are satisfied,"
+            )
+            print(
+                "or click Reset to restore the "
+                "algorithm's suggested boundaries."
+            )
+            print()
+
+    # ----------------------------------------------------------
+    # Accept-button callback
+    # ----------------------------------------------------------
+
+    def on_accept(event):
+        nonlocal accepted
+
+        if (
+            len(manual_boundaries) > 0
+            and len(manual_boundaries) != expected_n_boundaries
+        ):
+            print()
+            print(
+                f"Please select all {expected_n_boundaries} boundaries"
+                " before clicking Accept."
+            )
+            print()
+            return
+            
+        accepted = True
+        plt.close(fig)
+
+    # ----------------------------------------------------------
+    # Reset-button callback
+    # ----------------------------------------------------------
+
+    def on_reset(event):
+
+        _reset_tier_boundary_review(
+            fig,
+            ax,
+            manual_boundaries,
+            suggested_boundaries,
+            counter_text,
+            expected_n_boundaries,
+        )
+
+    # ----------------------------------------------------------
+    # Register callbacks
+    # ----------------------------------------------------------
+
+    click_id = fig.canvas.mpl_connect(
+        "button_press_event",
+        on_click,
+    )
+
+    # Accept button callback connected here
+    accept_button.on_clicked(
+        on_accept,
+    )
+
+    # Reset button callback connected here
+    reset_button.on_clicked(
+        on_reset,
+    )
+    
+    # ----------------------------------------------------------
+    # Display review window
+    # ----------------------------------------------------------
+
+    plt.show(block=True)
+
+    # ----------------------------------------------------------
+    # Clean up callbacks
+    # ----------------------------------------------------------
+
+    fig.canvas.mpl_disconnect(click_id)
+
+    if not accepted:
+
+        return None, None
+
+    final_boundaries, tier_detection_method = _validate_manual_boundaries(
+        manual_boundaries,
+        suggested_boundaries,
+        max_boundary_value,
+    )
+
+    return final_boundaries, tier_detection_method
+    
+def collect_tier_boundary_clicks(
+    dataset_folder_name,
+    z_reduced,
+    shifted_mean_intensity_profile_z,
+    candidate_peaks,
+    detected_left_edge,
+    detected_right_edge,
+    suggested_boundaries,
+    zwindow,
+    n_slices,
+    output_path,
+    expected_n_boundaries,
+    max_boundary_value,
+):
+    """
+    Review and optionally manually adjust tier boundaries.
+
+    Returns
+    -------
+    final_boundaries : ndarray
+        Final accepted tier boundaries.
+
+    tier_detection_method : str
+        "automatic_peaks" or "manual_override".
+    """
+
+    manual_boundaries = []
+
+    while True:
+
+        (
+            fig,
+            axs,
+            accept_button,
+            reset_button,
+            counter_text,
+        ) = _create_tier_boundary_review_figure(
+            dataset_folder_name,
+            z_reduced,
+            shifted_mean_intensity_profile_z,
+            candidate_peaks,
+            detected_left_edge,
+            detected_right_edge,
+            suggested_boundaries,
+            expected_n_boundaries,
+            zwindow,
+            n_slices,
+        )
+
+        _save_tier_boundary_review(
+            fig,
+            output_path,
+            stage="suggested",
+        )
+
+        (
+            final_boundaries,
+            tier_detection_method,
+        ) = _show_tier_boundary_review(
+            fig,
+            axs[1],
+            accept_button,
+            reset_button,
+            counter_text,
+            manual_boundaries,
+            suggested_boundaries,
+            expected_n_boundaries,
+            max_boundary_value,
+        )
+
+        if final_boundaries is not None:
+
+            if tier_detection_method == "manual_override":
+
+                for line in list(axs[1].lines):
+
+                    if (
+                        getattr(line, "_review_boundary", False)
+                        and line.get_color() == "green"
+                    ):
+                        line.set_visible(False)
+
+            _save_tier_boundary_review(
+                fig,
+                output_path,
+                stage="accepted",
+            )
+
+            if tier_detection_method == "manual_override":
+
+                for line in list(axs[1].lines):
+
+                    if (
+                        getattr(line, "_review_boundary", False)
+                        and line.get_color() == "green"
+                    ):
+                        line.set_visible(True)
+
+            plt.close(fig)
+
+            return (
+                final_boundaries,
+                tier_detection_method,
+            )
+
+        print()
+        print(
+            "The review window was closed without "
+            "clicking Accept."
+        )
+        print(
+            "Reopening tier-boundary review..."
+        )
+        print()
+
+def create_tier_order_preview_figure(
+    vol,
+    finalized_tier_boundaries,
+    dataset_folder_name,
+    diagnostic_figures_path,
+    ):
+    
+    """
+    Create the detected tier-order preview figure.
+
+    Displays either the single detected tier or the first and last detected
+    tiers so the user can verify whether the detected tier order matches the
+    layout CSV.
+
+    The figure is saved as a diagnostic PNG before being returned.
+    """
+    
+    ranges = [
+        [finalized_tier_boundaries[i], finalized_tier_boundaries[i + 1]]
+        for i in range(len(finalized_tier_boundaries) - 1)
+    ]
+
+    tier_images = [
+        vol[start:end, :, :].mean(0)
+        for start, end in ranges
+    ]
+
+    if len(tier_images) == 1:
+        preview_images = [tier_images[0]]
+    else:
+        preview_images = [tier_images[0], tier_images[-1]]
+
+    image_h, image_w = preview_images[0].shape
+    aspect = image_w / image_h
+
+    image_width_inches = 5
+    title_space_inches = 2
+    control_space_inches = 0.8
+
+    fig_width = image_width_inches
+    fig_height = (
+        len(preview_images)
+        * image_width_inches
+        / aspect
+    ) + title_space_inches + control_space_inches
+
+
+    fig_tier_order, axs = plt.subplots(
+        len(preview_images),
+        1,
+        figsize=(fig_width, fig_height)
+    )
+    
+    plt.subplots_adjust(
+        bottom=control_space_inches / fig_height
+    )
+
+    if len(preview_images) == 1:
+        axs = [axs]
+
+        axs[0].imshow(preview_images[0], cmap="gray")
+        axs[0].set_title(
+            "Detected one tier only \n"
+            f"Slices {ranges[0][0]}-{ranges[0][1]}"
+        )
+        axs[0].axis("off")
+
+    else:
+
+        axs[0].imshow(preview_images[0], cmap="gray")
+        axs[0].set_title(
+            f"Detected tier: 1 of {len(tier_images)}\n"
+            f"Slices {ranges[0][0]}-{ranges[0][1]}"
+        )
+        axs[0].axis("off")
+
+        axs[1].imshow(preview_images[1], cmap="gray")
+        axs[1].set_title(
+            f"Detected tier: {len(tier_images)} of {len(tier_images)}\n"
+            f"Slices {ranges[-1][0]}-{ranges[-1][1]}"
+        )
+        axs[1].axis("off")
+
+    fig_tier_order.suptitle(
+        f"{dataset_folder_name} | Detected tier order preview"
+    )
+
+    tier_order_png = os.path.join(
+        diagnostic_figures_path,
+        f"{dataset_folder_name}_tier_order_review.png"
+    )
+
+    fig_tier_order.tight_layout()
+    
+    fig_tier_order.savefig(
+        tier_order_png,
+        dpi=300,
+        bbox_inches="tight"
+    )
+    
+    return fig_tier_order, axs, ranges, tier_images
+
+
+    
+def review_detected_tier_order(
+    fig,
+    axs,
+    tier_images,
+    ranges,
+):
+    review_state = {
+        "accepted": False,
+        "reject": False,
+        "reverse_detected_tier_order": False,
+    }
+
+    n_detected_tiers = len(tier_images)
+
+    def draw_preview():
+        if n_detected_tiers == 1:
+            display_indices = [0]
+        elif review_state["reverse_detected_tier_order"]:
+            display_indices = [n_detected_tiers - 1, 0]
+        else:
+            display_indices = [0, n_detected_tiers - 1]
+
+        for ax, tier_index in zip(axs, display_indices):
+            ax.clear()
+            ax.imshow(tier_images[tier_index], cmap="gray")
+
+            if n_detected_tiers == 1:
+                ax.set_title(
+                    "Detected one tier only\n"
+                    f"Slices {ranges[tier_index][0]}-{ranges[tier_index][1]}"
+                )
+            else:
+                display_number = display_indices.index(tier_index) + 1
+                ax.set_title(
+                    f"Detected tier: {display_number} of {n_detected_tiers}\n"
+                    f"Slices {ranges[tier_index][0]}-{ranges[tier_index][1]}"
+                )
+
+            ax.axis("off")
+
+        fig.canvas.draw_idle()
+
+    if n_detected_tiers > 1:
+
+        checkbox_ax = fig.add_axes([0.08, 0.04, 0.42, 0.06])
+        checkbox_ax.set_frame_on(False)
+        checkbox_ax.set_xticks([])
+        checkbox_ax.set_yticks([])
+
+        invert_checkbox = CheckButtons(
+            checkbox_ax,
+            ["Invert detected tier order"],
+            [False],
+        )
+
+        def toggle_invert(_):
+            review_state["reverse_detected_tier_order"] = (
+                not review_state["reverse_detected_tier_order"]
+            )
+            draw_preview()
+
+        invert_checkbox.on_clicked(toggle_invert)
+
+    accept_ax = fig.add_axes([0.58, 0.04, 0.15, 0.06])
+    reject_ax = fig.add_axes([0.76, 0.04, 0.19, 0.06])
+
+    accept_button = Button(accept_ax, "Accept")
+    reject_button = Button(reject_ax, "Redo tiers")
+
+    def accept_review(_):
+        review_state["accepted"] = True
+        plt.close(fig)
+
+    def reject_review(_):
+        review_state["reject"] = True
+        plt.close(fig)
+
+    accept_button.on_clicked(accept_review)
+    reject_button.on_clicked(reject_review)
+
+    draw_preview()
+    plt.show(block=True)
+
+    if review_state["reject"]:
+        return None
+
+    if not review_state["accepted"]:
+        return None
+
+    return review_state["reverse_detected_tier_order"]
+
+
+
+def build_scan_structure_from_csv(
+    layout,
+):
+
+    """
+    Build the workflow's internal scan structure from the layout CSV.
+
+    Parameters
+    ----------
+    layout : ndarray
+        Layout CSV already loaded into memory.
+
+    Returns
+    -------
+    scan_structure : dict
+        Per-tier scan structure keyed by tier ID.
+
+    tier_ids : ndarray
+        Tier numbers present in the scan.
+
+    tier_mask : ndarray
+        Boolean array indicating which tiers contain at least one specimen.
+    """
+    
+    n_tiers = int(layout[:, 0].max())
+
+    scan_structure = {}
+
+    for tier_id in range(1, n_tiers + 1):
+        tier_data = layout[layout[:, 0] == tier_id]
+
+        if len(tier_data) == 0:
+            continue
+
+        n_rows = int(tier_data[:, 1].max())
+        n_cols = tier_data.shape[1] - 2
+
+        tier_layout = np.zeros((n_rows, n_cols), object)
+
+        for row_id in range(1, n_rows + 1):
+            row_data = tier_data[tier_data[:, 1] == row_id, 2:]
+
+            if row_data.shape[0] != 1:
+                raise ValueError(
+                    f"Tier {tier_id}, row {row_id} has {row_data.shape[0]} matching rows. "
+                    "Expected exactly one."
+                )
+
+            tier_layout[row_id - 1, :] = row_data[0]
+
+        scan_structure[tier_id] = {
+            "layout": tier_layout,
+            "mask": tier_layout != 0,
+            "n_rows": n_rows,
+            "n_cols": n_cols,
+        }
+
+    tier_ids = np.array(
+        sorted(scan_structure.keys())
+    )
+
+    tier_mask = np.array(
+        [
+            np.any(scan_structure[t]["mask"])
+            for t in tier_ids
+        ]
+    )
+
+    return (
+        scan_structure,
+        tier_ids,
+        tier_mask,
+    )
+
+def normalize_tier_images(
+    tier_mean_projections,
+    active_tier_ids,
+    angle_min=-5,
+    angle_max=5,
+    angle_step=0.25,
+):
+
+    """
+    Estimate and apply the optimal rotation correction for each active tier.
+
+    Returns
+    -------
+    normalized_tier_images : list
+        Rotation-corrected tier images.
+    
+    tier_rotations : list of dict
+        Rotation parameters and scores recorded for workflow metadata.
+    """
+
+    normalized_tier_images = []
+    tier_rotations = []
+
+    for i, tier_image in enumerate(tier_mean_projections):
+
+        best_angle, tested_angles, rotation_scores = estimate_grid_rotation_by_coherence(
+            tier_image,
+            angle_min,
+            angle_max,
+            angle_step
+        )
+
+        normalized_image = rotate(
+            tier_image,
+            best_angle,
+            preserve_range=True,
+            resize=False,
+            mode="edge"
+        )
+    
+        normalized_tier_images.append(normalized_image)
+
+        tier_rotations.append({
+            "tier_id": int(active_tier_ids[i]),
+            "rotation_angle": best_angle,
+            "angle_min": angle_min,
+            "angle_max": angle_max,
+            "angle_step": angle_step,
+            "best_score": float(rotation_scores.max()),
+        })
+    
+    return (
+        normalized_tier_images,
+        tier_rotations,
+    )
+    
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+def build_tier_divider_proposal_png(
+    normalized_image,
+    homogeneity_image,
+    dark_mask,
+    row_candidates,
+    col_candidates,
+    row_pairs,
+    col_pairs,
+    row_centers,
+    col_centers,
+    dataset_folder_name,
+    tier_id,
+    diagnostic_figures_path,
+):
+    
+    image_h, image_w = normalized_image.shape
+    aspect = image_w / image_h
+
+    image_width = 5
+    image_height = image_width / aspect
+
+    width_spacing = 2 
+    height_spacing = 3 
+    figure_width = (3 * image_width + width_spacing) 
+    figure_height = (2 * image_height + height_spacing)
+
+    fig_dividers, axs = plt.subplots(2, 3, figsize=(figure_width, figure_height))
+
+    # Normalized image
+    axs[0, 0].imshow(normalized_image, cmap="gray")
+    axs[0, 0].set_title(f"Normalized image")
+    axs[0, 0].axis("off")
+
+
+    # homogeneity image
+    axs[0, 1].imshow(homogeneity_image, cmap="gray")
+    axs[0, 1].set_title("local homogeneity image")
+    axs[0, 1].axis("off")
+
+    # Dark mask
+    axs[0, 2].imshow(dark_mask, cmap="gray")
+    axs[0, 2].set_title("Dark mask")
+    axs[0, 2].axis("off")
+
+    # Candidate divider edges
+    axs[1, 0].imshow(normalized_image, cmap="gray")
+
+    for r in row_candidates:
+        axs[1, 0].axhline(r, color="magenta", linestyle=":", linewidth=1)
+
+    for c in col_candidates:
+        axs[1, 0].axvline(c, color="magenta", linestyle=":", linewidth=1)
+
+    axs[1, 0].set_title("Candidate divider edges")
+    axs[1, 0].axis("off")
+
+    # Paired divider edges
+    axs[1, 1].imshow(normalized_image, cmap="gray")
+
+    for r1, r2 in row_pairs:
+        axs[1, 1].axhline(r1, color="red", linestyle="--")
+        axs[1, 1].axhline(r2, color="green", linestyle="--")
+
+    for c1, c2 in col_pairs:
+        axs[1, 1].axvline(c1, color="red", linestyle="--")
+        axs[1, 1].axvline(c2, color="green", linestyle="--")
+
+    axs[1, 1].set_title("Paired divider edges")
+    axs[1, 1].axis("off")
+
+    # Divider centerlines
+    axs[1, 2].imshow(normalized_image, cmap="gray")
+
+    for r1, r2 in row_pairs:
+        axs[1, 2].axhline(r1, color="red", linestyle="--")
+        axs[1, 2].axhline(r2, color="green", linestyle="--")
+
+    for r in row_centers:
+        axs[1, 2].axhline(r, color="cyan", linewidth=2)
+
+    for c1, c2 in col_pairs:
+        axs[1, 2].axvline(c1, color="red", linestyle="--")
+        axs[1, 2].axvline(c2, color="green", linestyle="--")
+
+    for c in col_centers:
+        axs[1, 2].axvline(c, color="cyan", linewidth=2)
+
+    axs[1, 2].set_title("Divider centerlines")
+    axs[1, 2].axis("off")
+
+
+    fig_dividers.suptitle(
+        f"{dataset_folder_name} | Tier {tier_id}: automated divider proposal",
+        fontsize=14
+    )
+
+    dividers_png = os.path.join(
+        diagnostic_figures_path,
+        f"{dataset_folder_name}_tier_{tier_id}_tier_divider_proposals.png"
+    )
+
+    fig_dividers.savefig(
+        dividers_png,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    return fig_dividers, dividers_png
+    
+def review_automated_divider_proposal(
+    fig,
+    companion_fig=None,
+):
+    """
+    Review the automated divider proposal.
+
+    Returns
+    -------
+    review_choice : str
+        "accept" if the automated proposal is accepted.
+        "manual_override" if the user wishes to manually adjust the dividers.
+
+    Closing the figure without choosing an option is not considered
+    acceptance. The figure will reopen until one of the buttons is
+    clicked.
+    """
+
+    review_choice = None
+
+    # ----------------------------------------------------------
+    # Accept button
+    # ----------------------------------------------------------
+
+    accept_ax = fig.add_axes([0.60, 0.03, 0.14, 0.06])
+
+    accept_button = Button(
+        accept_ax,
+        "Accept",
+    )
+
+    # ----------------------------------------------------------
+    # Manual override button
+    # ----------------------------------------------------------
+
+    override_ax = fig.add_axes([0.77, 0.03, 0.18, 0.06])
+
+    override_button = Button(
+        override_ax,
+        "Manual override",
+    )
+
+    # ----------------------------------------------------------
+    # User instructions
+    # ----------------------------------------------------------
+
+    instruction_ax = fig.add_axes([0.52, 0.095, 0.43, 0.05])
+    instruction_ax.axis("off")
+
+    instruction_ax.text(
+        0.0,
+        0.5,
+        "Close the occupancy profile in the other window, then make your selection here.",
+        fontsize=10,
+        va="center",
+    )
+
+    # ----------------------------------------------------------
+    # Button callbacks
+    # ----------------------------------------------------------
+
+    def on_accept(event):
+        nonlocal review_choice
+
+        review_choice = "accept"      
+        plt.close(fig)
+
+    def on_override(event):
+        nonlocal review_choice
+
+        review_choice = "manual_override"
+        plt.close(fig)
+        
+    accept_button.on_clicked(on_accept)
+    override_button.on_clicked(on_override)
+
+    # ----------------------------------------------------------
+    # Interaction loop
+    # ----------------------------------------------------------
+
+    while review_choice is None:
+
+        plt.show(block=True)
+
+        if review_choice is not None:
+            break
+
+        print()
+        print("The divider proposal window was closed without")
+        print("choosing Accept or Manual override.")
+        print("Reopening review window...")
+        print()
+        
+    return review_choice
+
+
+def review_dividers(
+    image,
+    title,
+    dataset_folder_name,
+    proposed_rows=None,
+    proposed_cols=None,
+    diagnostic_figures_path=None,
+    tier_id=None,
+):
+
+    """
+    Manually review divider locations for a single tier.
+
+    If the user makes no clicks, the proposed divider locations are accepted.
+
+    If the user clicks one or more divider locations, those selections replace
+    the automated proposal.
+
+    The interface provides Accept and Reset buttons before returning the final
+    divider definitions.
+    """
+
+    if proposed_rows is None:
+        proposed_rows = []
+
+    if proposed_cols is None:
+        proposed_cols = []
+
+    fig, ax = plt.subplots()
+    fig.subplots_adjust(
+        bottom=0.18,
+    )
+
+    ax.imshow(image, cmap="gray")
+    ax.set_title(
+        f"{dataset_folder_name} | {title}\n\n"
+        "Left click to choose row divider(s)\n"
+        "Right click to choose column divider(s)"
+    )
+
+    for r in proposed_rows:
+        ax.axhline(r, color="lime", linestyle="--")
+
+    for c in proposed_cols:
+        ax.axvline(c, color="lime", linestyle="--")
+
+    clicked_rows = []
+    clicked_cols = []
+    
+    review_state = {
+        "accepted": False,
+    }
+
+    def on_divider_review_click(event):
+
+        if event.inaxes != ax:
+            return
+
+        if event.button == 1:
+            row = int(round(event.ydata))
+            clicked_rows.append(row)
+            print(f"Row divider {len(clicked_rows)}: {row}")
+            ax.axhline(row, color="red")
+            fig.canvas.draw_idle()
+
+        elif event.button == 3:
+            col = int(round(event.xdata))
+            clicked_cols.append(col)
+            print(f"Column divider {len(clicked_cols)}: {col}")
+            ax.axvline(col, color="blue")
+            fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("button_press_event", on_divider_review_click)
+
+    # ----------------------------------------------------------
+    # Accept / Reset buttons
+    # ----------------------------------------------------------
+
+    accept_ax = fig.add_axes([0.62, 0.03, 0.14, 0.06])
+    reset_ax  = fig.add_axes([0.79, 0.03, 0.14, 0.06])
+
+    accept_button = Button(
+        accept_ax,
+        "Accept",
+    )
+
+    reset_button = Button(
+        reset_ax,
+        "Reset",
+    )
+
+    def on_accept(event):
+
+        for line in list(ax.lines):
+            if line.get_color() == "lime":
+                line.remove()
+
+        accepted_png = os.path.join(
+            diagnostic_figures_path,
+            f"{dataset_folder_name}_tier_{tier_id}_manual_divider_review_accepted.png",
+        )
+
+        fig.savefig(
+            accepted_png,
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        review_state["accepted"] = True
+        plt.close(fig)
+
+    def on_reset(event):
+
+        clicked_rows.clear()
+        clicked_cols.clear()
+
+        ax.clear()
+
+        ax.imshow(image, cmap="gray")
+        
+        for r in proposed_rows:
+            ax.axhline(r, color="lime", linestyle="--")
+
+        for c in proposed_cols:
+            ax.axvline(c, color="lime", linestyle="--")
+    
+        ax.set_title(
+            f"{dataset_folder_name} | {title}\n\n"
+            "Left click = row divider\n"
+            "Right click = column divider"
+        )
+
+        fig.canvas.draw_idle()
+
+    accept_button.on_clicked(on_accept)
+    reset_button.on_clicked(on_reset)
+    
+    while not review_state["accepted"]:
+        plt.show(block=True)
+
+    if len(clicked_rows) == 0:
+        final_rows = np.array(proposed_rows).astype(int)
+    else:
+        final_rows = np.sort(np.array(clicked_rows).astype(int))
+
+    if len(clicked_cols) == 0:
+        final_cols = np.array(proposed_cols).astype(int)
+    else:
+        final_cols = np.sort(np.array(clicked_cols).astype(int))
+
+    print("\nFinal divider selection:")
+    print("Rows:", final_rows)
+    print("Cols:", final_cols)
+
+    return final_rows, final_cols
+
+def _compute_tier_divider_evidence(
+    normalized_image,
+    expected_n_rows,
+    expected_n_cols,
+    tier_id,
+):
+    """
+    Compute divider-detection evidence for one tier.
+    """
+
+    stability_window = 3
+
+    homogeneity_image = local_homogeneity_image(
+        normalized_image,
+        window_size=stability_window,
+        percentile_low=2,
+        percentile_high=98,
+    )
+
+    cutoff = np.percentile(homogeneity_image, 20)
+    dark_mask = homogeneity_image < cutoff
+
+    row_occupancy, col_occupancy = compute_occupancy_profiles(
+        dark_mask
+    )
+
+    (
+        row_starting_threshold,
+        row_min_fraction,
+        row_all_peak_counts,
+        row_n_threshold_retained_peaks,
+        row_prominence_peaks,
+    ) = estimate_occupancy_threshold_by_peak_distance(row_occupancy)
+
+    (
+        col_starting_threshold,
+        col_min_fraction,
+        col_all_peak_counts,
+        col_n_threshold_retained_peaks,
+        col_prominence_peaks,
+    ) = estimate_occupancy_threshold_by_peak_distance(col_occupancy)
+
+    (
+        row_centers,
+        row_pairs,
+        row_occupancy,
+        row_candidates,
+        row_candidate_bands,
+        row_band_centers,
+    ) = paired_edge_centerlines(
+        dark_mask,
+        axis_label="row",
+        min_fraction=row_min_fraction,
+        expected_n_pairs=expected_n_rows - 1,
+    )
+
+    (
+        col_centers,
+        col_pairs,
+        col_occupancy,
+        col_candidates,
+        col_candidate_bands,
+        col_band_centers,
+    ) = paired_edge_centerlines(
+        dark_mask,
+        axis_label="col",
+        min_fraction=col_min_fraction,
+        expected_n_pairs=expected_n_cols - 1,
+    )
+
+    return {
+        "tier_id": int(tier_id),
+        "stability_window": stability_window,
+        "homogeneity_image": homogeneity_image,
+        "cutoff": cutoff,
+        "dark_mask": dark_mask,
+        "row_occupancy": row_occupancy,
+        "col_occupancy": col_occupancy,
+        "row_starting_threshold": row_starting_threshold,
+        "col_starting_threshold": col_starting_threshold,
+        "row_final_threshold": row_min_fraction,
+        "col_final_threshold": col_min_fraction,
+        "row_all_peak_count": row_all_peak_counts,
+        "col_all_peak_count": col_all_peak_counts,
+        "row_n_threshold_retained_peaks": row_n_threshold_retained_peaks,
+        "col_n_threshold_retained_peaks": col_n_threshold_retained_peaks,
+        "row_prominence_peaks": row_prominence_peaks,
+        "col_prominence_peaks": col_prominence_peaks,
+        "row_n_prominence_retained_peaks": sum(peak["retained_by_prominence"] for peak in row_prominence_peaks),
+        "col_n_prominence_retained_peaks": sum(peak["retained_by_prominence"] for peak in col_prominence_peaks),
+        "peak_diagnostic_rows": [{"tier_id": int(tier_id), "axis": "row", **peak} for peak in row_prominence_peaks],
+        "peak_diagnostic_cols": [{"tier_id": int(tier_id), "axis": "col", **peak} for peak in col_prominence_peaks],
+        "row_centers": row_centers,
+        "col_centers": col_centers,
+        "row_pairs": row_pairs,
+        "col_pairs": col_pairs,
+        "row_candidates": row_candidates,
+        "col_candidates": col_candidates,
+        "row_candidate_bands": row_candidate_bands,
+        "col_candidate_bands": col_candidate_bands,
+        "row_band_centers": row_band_centers,
+        "col_band_centers": col_band_centers,
+    }
+    
+def review_tier_dividers(
+    normalized_image,
+    expected_layout,
+    dataset_folder_name,
+    tier_id,
+    diagnostic_figures_path,
+):
+    """
+    Review divider placement for one tier.
+
+    Returns
+    -------
+    dict
+        Proposed dividers
+        Final dividers
+        Review method
+        Thresholds
+        Diagnostic image paths
+        Peak diagnostics
+    """
+    expected_n_rows = expected_layout["n_rows"]
+    expected_n_cols = expected_layout["n_cols"]
+
+    evidence = _compute_tier_divider_evidence(
+        normalized_image=normalized_image,
+        expected_n_rows=expected_n_rows,
+        expected_n_cols=expected_n_cols,
+        tier_id=tier_id,
+    )
+
+    occupancy_fig, occupancy_png = _save_occupancy_profile_png(
+        evidence=evidence,
+        dataset_folder_name=dataset_folder_name,
+        tier_id=tier_id,
+        diagnostic_figures_path=diagnostic_figures_path,
+    )
+
+    proposal_fig, proposal_png = build_tier_divider_proposal_png(
+        normalized_image=normalized_image,
+        homogeneity_image=evidence["homogeneity_image"],
+        dark_mask=evidence["dark_mask"],
+        row_candidates=evidence["row_candidates"],
+        col_candidates=evidence["col_candidates"],
+        row_pairs=evidence["row_pairs"],
+        col_pairs=evidence["col_pairs"],
+        row_centers=evidence["row_centers"],
+        col_centers=evidence["col_centers"],
+        dataset_folder_name=dataset_folder_name,
+        tier_id=tier_id,
+        diagnostic_figures_path=diagnostic_figures_path,
+    )
+
+    review_choice = review_automated_divider_proposal(
+        proposal_fig,
+        companion_fig=occupancy_fig,
+    )
+    
+    plt.close(proposal_fig)
+    plt.close(occupancy_fig)
+    
+    proposed_rows = np.array(evidence["row_centers"]).astype(int).tolist()
+    proposed_cols = np.array(evidence["col_centers"]).astype(int).tolist()
+
+    if review_choice == "manual_override":
+        final_rows, final_cols = review_dividers(
+            image=normalized_image,
+            proposed_rows=proposed_rows,
+            proposed_cols=proposed_cols,
+            title=f"Tier {tier_id}: manual divider review",
+            dataset_folder_name=dataset_folder_name,
+            diagnostic_figures_path=diagnostic_figures_path,
+            tier_id=tier_id,
+        )
+    else:
+        final_rows = proposed_rows
+        final_cols = proposed_cols
+
+    _validate_final_dividers(
+        final_rows=final_rows,
+        final_cols=final_cols,
+        expected_n_rows=expected_n_rows,
+        expected_n_cols=expected_n_cols,
+        tier_id=tier_id,
+    )
+
+    return _package_tier_divider_result(
+        tier_id=tier_id,
+        expected_layout=expected_layout,
+        evidence=evidence,
+        proposed_rows=proposed_rows,
+        proposed_cols=proposed_cols,
+        final_rows=final_rows,
+        final_cols=final_cols,
+        review_choice=review_choice,
+        occupancy_png=occupancy_png,
+        proposal_png=proposal_png,
+    )
+    
+def _package_tier_divider_result(
+    tier_id,
+    expected_layout,
+    evidence,
+    proposed_rows,
+    proposed_cols,
+    final_rows,
+    final_cols,
+    review_choice,
+    occupancy_png,
+    proposal_png,
+):
+    return {
+        "tier_id": int(tier_id),
+        "n_expected_rows": expected_layout["n_rows"],
+        "n_expected_cols": expected_layout["n_cols"],
+        "proposed_rows": proposed_rows,
+        "proposed_cols": proposed_cols,
+        "final_rows": np.array(final_rows).astype(int).tolist(),
+        "final_cols": np.array(final_cols).astype(int).tolist(),
+        "n_detected_rows": len(proposed_rows) + 1,
+        "n_detected_cols": len(proposed_cols) + 1,
+        "review_choice": review_choice,
+        "row_starting_threshold": evidence["row_starting_threshold"],
+        "col_starting_threshold": evidence["col_starting_threshold"],
+        "row_final_threshold": evidence["row_final_threshold"],
+        "col_final_threshold": evidence["col_final_threshold"],
+        "row_all_peak_count": evidence["row_all_peak_count"],
+        "col_all_peak_count": evidence["col_all_peak_count"],
+        "row_n_prominence_retained_peaks": evidence["row_n_prominence_retained_peaks"],
+        "col_n_prominence_retained_peaks": evidence["col_n_prominence_retained_peaks"],
+        "row_n_threshold_retained_peaks": evidence["row_n_threshold_retained_peaks"],
+        "col_n_threshold_retained_peaks": evidence["col_n_threshold_retained_peaks"],
+        "occupancy_profile_png": occupancy_png,
+        "tier_divider_proposal_png": proposal_png,
+        "peak_diagnostic_rows": evidence["peak_diagnostic_rows"],
+        "peak_diagnostic_cols": evidence["peak_diagnostic_cols"],
+    }
+    
+def _validate_final_dividers(
+    final_rows,
+    final_cols,
+    expected_n_rows,
+    expected_n_cols,
+    tier_id,
+):
+    accepted_rows = len(final_rows) + 1
+    accepted_cols = len(final_cols) + 1
+
+    if accepted_rows != expected_n_rows or accepted_cols != expected_n_cols:
+        raise ValueError(
+            f"Tier {tier_id} divider count mismatch. "
+            f"Expected {expected_n_rows} rows and {expected_n_cols} columns, "
+            f"but got {accepted_rows} rows and {accepted_cols} columns."
+        )
+
+
+
+
+
+
+
+
+
+
+def _save_occupancy_profile_png(
+    evidence,
+    dataset_folder_name,
+    tier_id,
+    diagnostic_figures_path,
+):
+
+    row_occupancy = evidence["row_occupancy"]
+    col_occupancy = evidence["col_occupancy"]
+
+    row_starting_threshold = evidence["row_starting_threshold"]
+    col_starting_threshold = evidence["col_starting_threshold"]
+
+    row_min_fraction = evidence["row_final_threshold"]
+    col_min_fraction = evidence["col_final_threshold"]
+
+    row_candidates = evidence["row_candidates"]
+    col_candidates = evidence["col_candidates"]
+
+    row_candidate_bands = evidence["row_candidate_bands"]
+    col_candidate_bands = evidence["col_candidate_bands"]
+
+    fig_occupancy, axs = plt.subplots(2, 1, figsize=(20, 12))
+
+    # Row occupancy profile
+    axs[0].plot(row_occupancy)
+
+    axs[0].axhline(
+        row_starting_threshold,
+        color="orange",
+        linestyle=":",
+        linewidth=2,
+        label=f"starting threshold = {row_starting_threshold:.2f}"
+    )
+
+    axs[0].axhline(
+        row_min_fraction,
+        color="red",
+        linestyle="--",
+        label=f"final threshold = {row_min_fraction:.2f}"
+    )
+
+    axs[0].scatter(
+        row_candidates,
+        row_occupancy[row_candidates],
+        color="magenta",
+        zorder=5,
+        label="candidates"
+    )
+
+    for row_band_idx, band in enumerate(row_candidate_bands):
+
+        left = band[0]
+        right = band[-1]
+
+        if left == right:
+            left -= 0.5
+            right += 0.5
+
+        axs[0].axvspan(
+            left,
+            right,
+            alpha=0.2,
+            label="possible divider region" if row_band_idx == 0 else None,
+        )
+    
+    axs[0].set_title("Row occupancy profile")
+    axs[0].set_xlabel("row index")
+    axs[0].set_ylabel("occupancy")
+    axs[0].legend()
+
+    # Column occupancy profile
+    axs[1].plot(col_occupancy)
+
+    axs[1].axhline(
+        col_starting_threshold,
+        color="orange",
+        linestyle=":",
+        linewidth=2,
+        label=f"starting threshold = {col_starting_threshold:.2f}"
+    )
+    
+    axs[1].axhline(
+        col_min_fraction,
+        color="red",
+        linestyle="--",
+        label=f"final threshold = {col_min_fraction:.2f}"
+    )
+
+    axs[1].scatter(
+        col_candidates,
+        col_occupancy[col_candidates],
+        color="magenta",
+        zorder=5,
+        label="candidates"
+    )
+
+    for band_idx, band in enumerate(col_candidate_bands):
+
+        left = band[0]
+        right = band[-1]
+
+        if left == right:
+            left -= 0.5
+            right += 0.5
+
+        axs[1].axvspan(
+            left,
+            right,
+            alpha=0.2,
+            label="possible divider region" if band_idx == 0 else None,
+        )
+
+    axs[1].set_title("Column occupancy profile")
+    axs[1].set_xlabel("column index")
+    axs[1].set_ylabel("occupancy")
+    axs[1].legend()
+
+    fig_occupancy.suptitle(
+        f"{dataset_folder_name} | Tier {tier_id}: occupancy profiles",
+        fontsize=14
+    )
+
+    occupancy_png = os.path.join(
+        diagnostic_figures_path,
+        f"{dataset_folder_name}_tier_{tier_id}_occupancy_profiles.png"
+    )
+
+    fig_occupancy.savefig(
+        occupancy_png,
+        dpi=300,
+        bbox_inches="tight"
+    )
+    
+    return fig_occupancy, occupancy_png
+
