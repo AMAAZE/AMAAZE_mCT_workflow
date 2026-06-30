@@ -25,51 +25,93 @@ from utils import *
 
 timer_reclean_start = timeit.default_timer()
 
-print()
-print("AMAAZE optional mesh re-cleaning utility")
-print()
-print("This utility re-cleans meshes that were already produced by the main workflow.")
-print("It reads the workflow metadata file for provenance, but it does not modify it.")
-print()
+TOTAL_QUESTIONS_rc = 4
 
-metadata_path = ask_existing_path(
-    "What is the full path to the workflow metadata JSON file?\n"
-    "This is the metadata file created by the main AMAAZE workflow.",
-    is_dir=False
+print_terminal_header("Optional Script: Re-clean meshes")
+
+print("In this optional step, you will re-clean meshes that were")
+print("created by 04_surface.py using different cleaning parameters.")
+print()
+print("This script writes a separate re-cleaning folder and metadata.")
+print("It does not modify the canonical workflow metadata JSON.")
+print()
+print("When you're ready, press Enter to begin.")
+input("> ")
+
+print_question_header("Workflow Metadata JSON", 1, TOTAL_QUESTIONS_rc)
+
+metadata_paths = get_metadata_paths_from_command_line_or_user(
+    step_name="optional_reclean_meshes",
+    allow_batch=False
 )
 
+metadata_path = metadata_paths[0]
 metadata = load_metadata_if_available(metadata_path)
 
-if metadata is None:
+md = unpack_metadata(metadata)
+
+output_path = md.output_path
+dataset_folder_name = md.dataset_folder_name
+
+# ============================================================
+# Select mesh folder
+# ============================================================
+
+print_question_header("Mesh folder", 2, TOTAL_QUESTIONS_rc)
+
+mesh_folders = [
+    os.path.join(md.output_path, folder)
+    for folder in os.listdir(md.output_path)
+    if (
+        os.path.isdir(os.path.join(md.output_path, folder))
+        and folder.lower().startswith("meshes")
+    )
+]
+
+mesh_folders.sort()
+
+if len(mesh_folders) == 0:
     raise RuntimeError(
-        f"Could not load metadata file:\n{metadata_path}"
+        f"No mesh folders were found in:\n{md.output_path}\n\n"
+        "Run 04_surface.py first."
     )
 
-output_path = metadata["00_share_data"]["output_path"]
-dataset_folder_name = metadata["00_share_data"]["dataset_folder_name"]
+if len(mesh_folders) == 1:
+    input_mesh_folder = os.path.normpath(mesh_folders[0])
+else:
+    print()
+    print("More than one mesh folder was found.")
+    print("Please choose the mesh folder to re-clean.")
+    print()
 
-input_mesh_folder = metadata["04_surface"]["mesh_folder"]
+    for i, folder in enumerate(mesh_folders, start=1):
+        print(f"{i}. {folder}")
 
-if not os.path.isdir(input_mesh_folder):
-    raise RuntimeError(
-        f"Input mesh folder was not found:\n{input_mesh_folder}\n\n"
-        "Check that 04_surface.py completed successfully."
+    print()
+
+    choice = ask(
+        "Enter the number of the mesh folder to use.",
+        cast=int
     )
+
+    if choice < 1 or choice > len(mesh_folders):
+        raise RuntimeError("That number is not in the list.")
+
+    input_mesh_folder = os.path.normpath(mesh_folders[choice - 1])
+    
+print()
+print(f"Using mesh folder:")
+print(f"    {input_mesh_folder}")
+print()
 
 # ============================================================
 # Review previous cleaning parameters
 # ============================================================
 
-previous_cleaning_parameters = {}
+print_question_header("Cleaning parameters", 3, TOTAL_QUESTIONS_rc)
 
-if "mesh_cleaning_parameters" in metadata.get("04_surface", {}):
-    previous_cleaning_parameters = metadata["04_surface"]["mesh_cleaning_parameters"]
-
-elif "mesh_cleaning_parameters" in metadata.get("03_segment", {}):
-    previous_cleaning_parameters = metadata["03_segment"]["mesh_cleaning_parameters"]
-
-previous_dust_cutoff = previous_cleaning_parameters.get("dust_cutoff", 20)
-previous_hole_tolerance = previous_cleaning_parameters.get("hole_tolerance", 0)
+previous_dust_cutoff = md.dust_cutoff
+previous_hole_tolerance = md.hole_tolerance
 
 print()
 print("Previous cleaning parameters found in the workflow metadata:")
@@ -101,7 +143,7 @@ else:
     )
 
 # ============================================================
-# Set parallelization
+# Set requested CPU cores
 # ============================================================
 
 default_clean_ncores = max(
@@ -109,7 +151,8 @@ default_clean_ncores = max(
     int(multiprocessing.cpu_count() / 4)
 )
 
-print()
+print_question_header("Requested CPU cores", 4, TOTAL_QUESTIONS_rc)
+
 print("Mesh re-cleaning can use multiple CPU cores.")
 print(
     f"By default, this utility uses approximately one quarter of available CPU cores "
@@ -294,14 +337,25 @@ save_metadata(reclean_metadata_json, reclean_metadata)
 # Confirm completion
 # ============================================================
 
+print_success("Mesh re-cleaning complete.")
+
+print_step_complete_header("Optional mesh re-cleaning complete")
+
+print("Re-cleaned meshes:")
 print()
-print("Mesh re-cleaning complete.")
+print(f"    {reclean_mesh_folder}")
 print()
-print(f"Re-cleaned meshes saved to:\n{reclean_mesh_folder}")
+
+print("Re-cleaning log:")
 print()
-print(f"Re-cleaning log written to:\n{reclean_log_csv}")
+print(f"    {reclean_log_csv}")
 print()
-print(f"Re-cleaning metadata written to:\n{reclean_metadata_json}")
+
+print("Re-cleaning metadata:")
 print()
-print("The original workflow metadata JSON was not modified.")
+print(f"    {reclean_metadata_json}")
+print()
+
+print(f"Meshes cleaned: {n_meshes_cleaned}")
+print(f"Cleaning failures: {n_mesh_cleaning_failures}")
 print()

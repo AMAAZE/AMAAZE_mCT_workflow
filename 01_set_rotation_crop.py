@@ -70,6 +70,23 @@ slice_index = min(slice_index, len(slice_files) - 1)
 slice_file = slice_files[slice_index]
 raw_image = read_slice(slice_file)
 
+diagnostic_figures_path_01 = os.path.join(
+    md.output_path,
+    "01_diagnostic_figures"
+)
+os.makedirs(diagnostic_figures_path_01, exist_ok=True)
+
+representative_slice_raw_png = os.path.join(
+    diagnostic_figures_path_01,
+    f"{md.dataset_folder_name}_representative_slice_raw.png"
+)
+
+plt.imsave(
+    representative_slice_raw_png,
+    raw_image,
+    cmap="gray"
+)
+
 # ============================================================
 # Set representative slice orientation
 # ============================================================
@@ -89,6 +106,17 @@ rotated_image = apply_preview_rotation(
     rotation_angle
 )
 
+representative_slice_oriented_png = os.path.join(
+    diagnostic_figures_path_01,
+    f"{md.dataset_folder_name}_representative_slice_oriented.png"
+)
+
+plt.imsave(
+    representative_slice_oriented_png,
+    rotated_image,
+    cmap="gray"
+)
+
 # ============================================================
 # Set crop
 # ============================================================
@@ -102,6 +130,17 @@ cropped_image = rotated_image[
     rowrng[0]:rowrng[1],
     colrng[0]:colrng[1]
 ].copy()
+
+representative_slice_cropped_png = os.path.join(
+    diagnostic_figures_path_01,
+    f"{md.dataset_folder_name}_representative_slice_cropped.png"
+)
+
+plt.imsave(
+    representative_slice_cropped_png,
+    cropped_image,
+    cmap="gray"
+)
 
 print()
 print_success("Representative slice orientation accepted.")
@@ -152,6 +191,11 @@ metadata["01_set_rotation_crop"] = {
         "rotation_angle": rotation_angle, 
         "rowrng": rowrng,
         "colrng": colrng, 
+        
+        "diagnostic_figures_path_01": diagnostic_figures_path_01,
+        "representative_slice_raw_png": representative_slice_raw_png,
+        "representative_slice_oriented_png": representative_slice_oriented_png,
+        "representative_slice_cropped_png": representative_slice_cropped_png,
         
         "zwindow": zwindow,
 }

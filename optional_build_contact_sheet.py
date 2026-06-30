@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
 
 """
-EX6_contact_sheet_pdf.py
+optional_build_contact_sheet.py
 
 Author: Katrina E. Yezzi-Woodley
 
-Build a PDF contact sheet from EX5 specimen view images.
-
-Expected input:
-    <scanpath>/scanphotos/
-        specimenA_view1.png
-        specimenA_view2.png
-        specimenA_view3.png
-        specimenA_view4.png
-        specimenB_view1.png
-        ...
-
-Output:
-    <scanpath>/scanphotos/contact_sheet.pdf
+Build a PDF contact sheet from using outputs from optional_render_views.py
 
 Layout:
     Specimen label
@@ -28,42 +16,119 @@ Layout:
     ...
 """
 
+# ============================================================
+# Configuration and imports
+# ============================================================
+
 from utils import *
 
-import os
-import re
-from PIL import Image, ImageDraw, ImageFont
-
-
-# --------------------------------------------------
-# Paths
-# --------------------------------------------------
-photodir = os.path.normpath(os.path.join(scanpath, "scanphotos"))
-outfile = os.path.join(photodir, "contact_sheet.pdf")
-
-if not os.path.isdir(photodir):
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
     raise RuntimeError(
-        f"scanphotos folder not found: {photodir}\n"
-        "Run EX5 first."
+        "Pillow is required to build the contact sheet.\n"
+        "Install with: pip install Pillow\n"
+        "Or skip this step if you do not need a contact sheet."
     )
+
+# ============================================================
+# Load workflow metadata
+# ============================================================
+
+TOTAL_QUESTIONS_cs = 1
+
+print_terminal_header("Optional Script: Build contact sheet")
+
+print("In this optional step, you will build a PDF contact sheet")
+print("from PNG views created by optional_render_views.py.")
+print()
+print("This script writes a separate contact-sheet PDF.")
+print("It does not modify the canonical workflow metadata JSON.")
+print()
+print("When you're ready, press Enter to begin.")
+input("> ")
+
+print_question_header("Workflow Metadata JSON", 1, TOTAL_QUESTIONS_cs)
+
+metadata_paths = get_metadata_paths_from_command_line_or_user(
+    step_name="optional_build_contact_sheet",
+    allow_batch=False
+)
+
+metadata_path = metadata_paths[0]
+metadata = load_metadata_if_available(metadata_path)
+
+md = unpack_metadata(metadata)
+
+# ============================================================
+# Locate input and output files
+# ============================================================
+
+render_view_folders = [
+    os.path.join(md.output_path, folder)
+    for folder in os.listdir(md.output_path)
+    if (
+        os.path.isdir(os.path.join(md.output_path, folder))
+        and folder.lower().startswith("optional_render_views")
+    )
+]
+
+render_view_folders.sort()
+
+if len(render_view_folders) == 0:
+    raise RuntimeError(
+        f"No optional render-view folder was found in:\n{md.output_path}\n\n"
+        "Run optional_render_views.py first, then run this script again."
+    )
+
+if len(render_view_folders) == 1:
+    photodir = os.path.normpath(render_view_folders[0])
+else:
+    print()
+    print("More than one optional render-view folder was found.")
+    print("Please choose the rendered PNG folder to use.")
+    print()
+
+    for i, folder in enumerate(render_view_folders, start=1):
+        print(f"{i}. {folder}")
+
+    print()
+
+    choice = ask(
+        "Enter the number of the render-view folder to use.",
+        cast=int
+    )
+
+    if choice < 1 or choice > len(render_view_folders):
+        raise RuntimeError("That number is not in the list.")
+
+    photodir = os.path.normpath(render_view_folders[choice - 1])
+
+timestamp = current_timestamp_for_filename()
+
+outfile = os.path.join(
+    md.output_path,
+    f"optional_contact_sheet_{md.dataset_folder_name}_{timestamp}.pdf"
+)
 
 pngs = [f for f in os.listdir(photodir) if f.lower().endswith(".png")]
 
 if len(pngs) == 0:
     raise RuntimeError(
-        f"No PNG files found in {photodir}\n"
-        "Run image render first."
+        f"No PNG files found in:\n{photodir}\n\n"
+        "Run optional_render_views.py first, then run this script again."
     )
 
+print()
+print(f"Found {len(pngs)} rendered PNG file(s).")
+print(f"Render-view folder: {photodir}")
+print(f"Contact sheet will be written to: {outfile}")
+print()
 
-# --------------------------------------------------
-# Group images by specimen stem
-# Expects names like:
-#   specimen_label_view1.png
-#   specimen_label_view2.png
-#   specimen_label_view3.png
-#   specimen_label_view4.png
-# --------------------------------------------------
+# ============================================================
+# Group rendered images by specimen
+# ============================================================
+
 pattern = re.compile(r"^(.*)_view([1-4])\.png$", re.IGNORECASE)
 
 groups = {}
@@ -90,10 +155,10 @@ if len(groups) == 0:
 specimen_names = sorted(groups.keys())
 
 
-# --------------------------------------------------
-# Page settings
-# --------------------------------------------------
-# PDF page size in pixels at working resolution
+# ============================================================
+# Page layout settings
+# ============================================================
+
 PAGE_W = 2550   # ~8.5 in at 300 dpi
 PAGE_H = 3300   # ~11 in at 300 dpi
 
@@ -112,14 +177,15 @@ usable_h = PAGE_H - TOP - BOTTOM
 
 # Four images across the usable width
 IMG_W = (usable_w - 3 * IMAGE_GAP) // 4
-IMG_H = int(IMG_W * 0.85)   # adjust later if you want a different visual ratio
+IMG_H = int(IMG_W * 0.85)
 
 BLOCK_H = LABEL_HEIGHT + LABEL_GAP + IMG_H + ROW_GAP
 
 
-# --------------------------------------------------
-# Font
-# --------------------------------------------------
+# ============================================================
+# Contact sheet helpers
+# ============================================================
+
 try:
     font = ImageFont.truetype("arial.ttf", 36)
 except Exception:
@@ -169,17 +235,16 @@ def add_specimen_block(page, y, specimen_label, image_paths):
 
     return y + BLOCK_H
 
+# ============================================================
+# Build contact sheet PDF
+# ============================================================
 
-# --------------------------------------------------
-# Build pages
-# --------------------------------------------------
 pages = []
 page = make_blank_page()
 draw = ImageDraw.Draw(page)
 
-scan_name = os.path.basename(os.path.normpath(scanpath))
+scan_name = md.dataset_folder_name
 
-# Title font (slightly larger than specimen labels)
 try:
     title_font = ImageFont.truetype("arial.ttf", 48)
 except Exception:
@@ -187,7 +252,7 @@ except Exception:
 
 draw.text((LEFT, TOP), scan_name, fill="black", font=title_font)
 
-y = TOP + 80   # shift content down below title
+y = TOP + 80
 
 for specimen_label in specimen_names:
     image_paths = groups[specimen_label]
@@ -211,6 +276,14 @@ pages[0].save(
     resolution=300.0
 )
 
-print(f"Saved contact sheet PDF to: {outfile}")
+print_success("Contact sheet PDF created.")
+
+print_step_complete_header("Optional contact sheet complete")
+
+print(f"Contact sheet PDF:")
+print()
+print(f"    {outfile}")
+print()
 print(f"Specimens included: {len(specimen_names)}")
 print(f"Pages written: {len(pages)}")
+print()

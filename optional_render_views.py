@@ -14,7 +14,41 @@ Outputs are written to:
     <scanpath>/scanphotos
 """
 
+# ============================================================
+# Configuration and imports
+# ============================================================
+
 from utils import *
+
+# ============================================================
+# Load metadata
+# ============================================================
+
+TOTAL_QUESTIONS_rv = 1
+
+print_terminal_header("Optional Script: Render views")
+
+print("In this optional step, you will render standardized PNG views")
+print("from the cleaned meshes created by 04_surface.py.")
+print()
+print("This script writes separate render-view outputs.")
+print("It does not modify the canonical workflow metadata JSON.")
+print()
+print("When you're ready, press Enter to begin.")
+input("> ")
+
+print_question_header("Workflow Metadata JSON", 1, TOTAL_QUESTIONS_rv)
+
+metadata_paths = get_metadata_paths_from_command_line_or_user(
+    step_name="optional_render_views",
+    allow_batch=False
+)
+
+metadata_path = metadata_paths[0]
+metadata = load_metadata_if_available(metadata_path)
+
+md = unpack_metadata(metadata)
+
 
 try:
     import pyvista as pv
@@ -34,21 +68,63 @@ except ImportError:
         "Or skip this step if you do not need image rendering."
     )
 
-# -------------------------------------------------------------------
-# Paths
-# -------------------------------------------------------------------
-meshdir = os.path.normpath(os.path.join(scanpath, "Clean_Meshes"))
-outdir = os.path.normpath(os.path.join(scanpath, "scanphotos"))
+# ============================================================
+# Locate input and output folders
+# ============================================================
+
+clean_mesh_folders = [
+    os.path.join(md.output_path, folder)
+    for folder in os.listdir(md.output_path)
+    if (
+        os.path.isdir(os.path.join(md.output_path, folder))
+        and "clean_mesh" in folder.lower()
+    )
+]
+
+clean_mesh_folders.sort()
+
+if len(clean_mesh_folders) == 0:
+    raise RuntimeError(
+        f"No clean mesh folders were found in:\n{md.output_path}\n\n"
+        "Run 04_surface.py first, or confirm that cleaned meshes were created."
+    )
+
+if len(clean_mesh_folders) == 1:
+    meshdir = os.path.normpath(clean_mesh_folders[0])
+else:
+    print()
+    print("More than one clean mesh folder was found.")
+    print("Please choose the cleaned mesh folder to render.")
+    print()
+
+    for i, folder in enumerate(clean_mesh_folders, start=1):
+        print(f"{i}. {folder}")
+
+    print()
+
+    choice = ask(
+        "Enter the number of the clean mesh folder to use.",
+        cast=int
+    )
+
+    if choice < 1 or choice > len(clean_mesh_folders):
+        raise RuntimeError("That number is not in the list.")
+
+    meshdir = os.path.normpath(clean_mesh_folders[choice - 1])
+    
+outdir = os.path.join(
+    md.output_path,
+    f"optional_render_views_{current_timestamp_for_filename()}"
+)
 
 if not os.path.isdir(meshdir):
     raise RuntimeError(
-        f"Clean mesh folder not found: {meshdir}\n"
-        "Run 05_clean_meshes.py first, or check your scanpath."
+        f"Clean mesh folder not found:\n{meshdir}\n\n"
+        "Run 04_surface.py first, or check the workflow metadata JSON."
     )
 
 os.makedirs(outdir, exist_ok=True)
 
-# Collect only .ply meshes
 mesh_paths = [
     os.path.join(meshdir, f)
     for f in os.listdir(meshdir)
@@ -57,13 +133,19 @@ mesh_paths = [
 
 if len(mesh_paths) == 0:
     raise RuntimeError(
-        f"No .ply files found in {meshdir}.\n"
-        "Run 05_clean_meshes.py first or confirm that cleaned meshes were created."
+        f"No .ply files found in:\n{meshdir}\n\n"
+        "Run 04_surface.py first, or confirm that cleaned meshes were created."
     )
 
-print(f"Found {len(mesh_paths)} cleaned mesh(es) in {meshdir}")
-print(f"Images will be written to {outdir}")
+print()
+print(f"Found {len(mesh_paths)} cleaned mesh(es).")
+print(f"Cleaned mesh folder: {meshdir}")
+print(f"Render-view images will be written to: {outdir}")
+print()
 
+# ============================================================
+# Rendering helpers
+# ============================================================
 
 def choose_scale_bar_length_mm(world_width_mm):
     """
@@ -235,11 +317,25 @@ def mesh_images(mesh_path, outdir):
     except Exception as error:
         print(f"Rendering error with {mesh_path}: {error}")
 
+# ============================================================
+# Render views
+# ============================================================
 
 num_cores = max(1, min(multiprocessing.cpu_count(), len(mesh_paths)))
+
+print()
+print(f"Rendering views using {num_cores} core(s).")
+print()
 
 Parallel(n_jobs=num_cores)(
     delayed(mesh_images)(mesh_path, outdir) for mesh_path in mesh_paths
 )
 
-print("Image render finished.")
+print_success("Image rendering finished.")
+
+print_step_complete_header("Optional render views complete")
+
+print(f"Rendered PNGs were written to:")
+print()
+print(f"    {outdir}")
+print()

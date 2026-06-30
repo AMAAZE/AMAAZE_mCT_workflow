@@ -1,21 +1,25 @@
+#!/usr/bin/env python3
+
 """
-03_segment_backup.py
+03_segment.py
 
 Original processing logic: RileyWilde
 Refactoring and workflow design: Katrina E. Yezzi-Woodley
 
-Load the processed volume and segment it into tiers and specimen regions
-using manual divider definition informed by the scan layout.
+Interactive segmentation step for the AMAAZE mCT surfacing workflow.
+
+This script loads the reduced working volume created by 02_build_subvolume.py
+and uses the layout CSV to guide segmentation into tiers and specimen regions.
 
 This step:
-- determines vertical tier boundaries,
-- make minor per-tier rotations for normalization,
-- suggested row/column divider locations based on automated detection,
-- allows the user to manually define row/column dividers overrides per tier,
-- computes specimen extraction boxes,
-- and saves the extraction plan to a .csv
-for downstream extraction and surfacing.
-
+- detects and reviews tier boundaries,
+- confirms the detected tier order,
+- applies per-tier geometric normalization,
+- detects and reviews row and column specimen dividers,
+- writes diagnostic figures and divider-review CSVs,
+- creates the specimen extraction plan,
+- records surfacing and mesh-cleaning parameters for 04_surface.py,
+- and updates the workflow metadata JSON.
 """
 
 # ============================================================
@@ -29,6 +33,29 @@ from utils import *
 # ============================================================
 
 timer_03_start = timeit.default_timer()
+
+TOTAL_QUESTIONS_03 = 5
+
+print_terminal_header("Step 4 of 5: Segment Specimen Regions")
+
+print("In this step, you will segment the reduced working volume")
+print("into tiers and specimen regions.")
+print()
+print("You will:")
+print()
+print("    1. Provide the workflow metadata JSON")
+print("    2. Review and confirm tier boundaries")
+print("    3. Review detected tier order")
+print("    4. Review specimen divider proposals")
+print("    5. Set surfacing and mesh-cleaning parameters")
+print()
+print("Steps 2, 3, and 4 use interactive preview windows.")
+print()
+print("When you're ready, press Enter to begin.")
+
+input("> ")
+
+print_question_header("Workflow Metadata JSON", 1, TOTAL_QUESTIONS_03)
 
 metadata_paths = get_metadata_paths_from_command_line_or_user(
     step_name="03_segment",
@@ -52,26 +79,14 @@ if not os.path.exists(md.subvolume_file):
 
 npzdata = np.load(md.subvolume_file)
 
-# Extract data for this workflow from npz
 vol = npzdata["vol"]
 
 # ============================================================
 # Load scan layout CSV and build scan structure
 # ============================================================
-# The layout CSV tells the workflow what specimens are supposed to be
-# in each cell of the packaging grid.
-#
-# This does NOT detect dividers. It only tells the workflow:
-# - how many tiers are expected
-# - how many rows/columns are expected
-# - what each extracted cell should be named
 
-# Empty cells are converted to 0 by fillna(0) and are treated as
-# intentionally empty positions within the specimen layout.
 layout = pd.read_csv(md.layoutfile).fillna(0).to_numpy()
 
-# The layout CSV describes only the current dataset.
-# Column 0 is the tier number.
 if len(layout) == 0:
     raise ValueError(
         "The layout CSV appears to be empty."
@@ -115,14 +130,6 @@ extraction_plan_csv = os.path.join(
 # Tier Division
 # ============================================================
 # This step operates in reduced .npz space.
-#
-# Each Z slice is collapsed to one average intensity value, producing
-# a 1D signal through the scan. Broad peaks in that signal correspond
-# to major packaging boundaries, such as the box edges and tier dividers.
-#
-# Candidate peaks are detected with scipy.signal.find_peaks(), and
-# prominence is used to choose the strongest internal tier boundaries
-# expected from the layout CSV.
 
 redo_tier_division = True
 
@@ -189,8 +196,6 @@ while redo_tier_division:
         tier_images=tier_images,
         ranges=ranges,
     )
-    
-    plt.close(fig_tier_order)
 
     if reverse_detected_tier_order is None:
         continue
@@ -204,6 +209,19 @@ while redo_tier_division:
 
     if reverse_detected_tier_order:
         ranges = ranges[::-1]
+    
+    selected_tier_order_png = os.path.join(
+        diagnostic_figures_path,
+        f"{md.dataset_folder_name}_selected_tier_order.png"
+    )
+
+    fig_tier_order.savefig(
+        selected_tier_order_png,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig_tier_order)
 
 # ============================================================
 # Remove tiers that contain no specimens according to the layout file.
@@ -236,10 +254,6 @@ tier_mean_projections = [x.mean(0) for x in tier_subvolumes]
 # Per-tier geometric normalization via rotation
 # ============================================================
 
-# This step applies a small per-tier rotation correction before 
-# divider detection. The applied rotation angle is recorded in
-# run metadata for replication.
-
 normalized_tier_images, tier_rotations = normalize_tier_images(
     tier_mean_projections,
     active_tier_ids,
@@ -249,28 +263,6 @@ normalized_tier_images, tier_rotations = normalize_tier_images(
 # Per-tier divider detection
 # ============================================================
 
-"""
-Divider detection operates on the mean projection of each active tier.
-
-A local homogeneity image is computed to emphasize specimen and divider
-boundaries while suppressing much of the internal texture. The homogeneity
-image is thresholded and converted into row- and column-wise occupancy
-profiles.
-
-Rows and columns with high occupancy are treated as candidate divider
-edges. Neighboring candidate indices are collapsed into edge bands,
-paired according to plausible divider widths, and converted into divider
-centerlines.
-
-Diagnostic plots are generated to visualize:
-1. The homogeneity image.
-2. Candidate divider edges.
-3. Paired divider edges.
-4. Final divider centerlines.
-
-The resulting divider network is used to define specimen extraction
-regions for downstream processing.
-"""
 occupancy_profile_pngs = []
 tier_divider_proposal_pngs = []
 tier_divider_proposals = []
@@ -288,46 +280,12 @@ for i, normalized_image in enumerate(normalized_tier_images):
         diagnostic_figures_path=diagnostic_figures_path,
     )
 
-        # (NOTE) dev review the next several dictionary lines to make sure they do not belong in the utils somewhere. 
     tier_divider_proposals.append(tier_result)
     occupancy_profile_pngs.append(tier_result["occupancy_profile_png"])
     tier_divider_proposal_pngs.append(tier_result["tier_divider_proposal_png"])
     diagnostic_rows.extend(tier_result["peak_diagnostic_rows"])
     diagnostic_cols.extend(tier_result["peak_diagnostic_cols"])
     
-#    fig_dividers, dividers_png = build_tier_divider_proposal_png(
-#        normalized_image=normalized_image,
-#        homogeneity_image=homogeneity_image,
-#        dark_mask=dark_mask,
-#        row_candidates=row_candidates,
-#        col_candidates=col_candidates,
-#        row_pairs=row_pairs,
-#        col_pairs=col_pairs,
-#        row_centers=row_centers,
-#        col_centers=col_centers,
-#        dataset_folder_name=md.dataset_folder_name,
-#        tier_id=int(active_tier_ids[i]),
-#        diagnostic_figures_path=diagnostic_figures_path,
-#    )
-#    
-#    
-#    if review_choice == "manual_override":
-#    
-#        final_rows, final_cols = review_dividers(
-#            image=normalized_image,
-#            proposed_rows=proposed_rows,
-#            proposed_cols=proposed_cols,
-#            title=f"Tier {int(active_tier_ids[i])}: manual divider review",
-#            dataset_folder_name=md.dataset_folder_name,
-#            diagnostic_figures_path=diagnostic_figures_path,
-#            tier_id=int(active_tier_ids[i]),
-#        )
-#
-#    else:
-#
-#        final_rows = proposed_rows
-#        final_cols = proposed_cols
-
 peak_diagnostics_df = pd.DataFrame(diagnostic_rows + diagnostic_cols)
 peak_diagnostics_df.to_csv(peak_diagnostics_csv, index=False)
 
@@ -352,80 +310,6 @@ for tier_result in tier_divider_proposals:
 
 tier_divider_finalized_definitions_df = pd.DataFrame(tier_divider_finalized_definitions)
 tier_divider_finalized_definitions_df.to_csv(tier_divider_finalized_definitions_csv, index=False)
-
-# ============================================================
-# Divider review / correction layer
-# ============================================================
-# Automated proposals and any manual overrides have already been reviewed
-# inside the per-tier divider detection loop.
-# This section validates and records the finalized divider choices.
-#
-#tier_divider_finalized_definitions = []  
-#
-#for i, normalized_image in enumerate(normalized_tier_images):
-#
-#    tier_id = int(active_tier_ids[i])
-#
-#    proposed_rows = tier_divider_proposals[i]["proposed_rows"]
-#    proposed_cols = tier_divider_proposals[i]["proposed_cols"]
-#
-#    final_rows = tier_divider_proposals[i]["final_rows"]
-#    final_cols = tier_divider_proposals[i]["final_cols"]
-#    
-#    while True:
-#        expected_rows = scan_structure[tier_id]["n_rows"]
-#        expected_cols = scan_structure[tier_id]["n_cols"]
-#
-#        accepted_rows = len(final_rows) + 1
-#        accepted_cols = len(final_cols) + 1
-#
-#        if accepted_rows == expected_rows and accepted_cols == expected_cols:
-#            break
-#
-#        print()
-#        print("The accepted dividers do not match the layout.")
-#        print(f"Layout expects {expected_rows} rows and {expected_cols} columns.")
-#        print(f"Current dividers create {accepted_rows} rows and {accepted_cols} columns.")
-#        print("Please review this tier again.")
-#        print()
-#        
-#
-#        final_rows, final_cols = review_dividers(
-#            image=normalized_image,
-#            proposed_rows=final_rows,
-#            proposed_cols=final_cols,
-#            title=f"Tier {tier_id}: divider review",
-#            dataset_folder_name=md.dataset_folder_name,
-#            diagnostic_figures_path=diagnostic_figures_path,
-#            tier_id=tier_id,
-#        )
-#                
-#    divider_method = (
-#        "manual_override"
-#        if tier_divider_proposals[i]["review_choice"] == "manual_override"
-#        else "automatic_accepted"
-#    )    
-#
-#    print()
-#    print(f"Tier {tier_id} divider selection summary")
-#    print(f"Proposed row dividers:   {proposed_rows}")
-#    print(f"Proposed col dividers:   {proposed_cols}")
-#    print(f"Selection method:        {divider_method}")
-#    print(f"Final row dividers used: {final_rows}")
-#    print(f"Final col dividers used: {final_cols}")
-#    print()
-#
-#    tier_divider_finalized_definitions.append({
-#        "tier_id": tier_id,
-#        "proposed_row_dividers": proposed_rows,
-#        "proposed_col_dividers": proposed_cols,
-#        "final_row_dividers": np.array(final_rows).astype(int).tolist(),
-#        "final_col_dividers": np.array(final_cols).astype(int).tolist(),        
-#        "divider_method": divider_method,
-#    })
-#
-#tier_divider_finalized_definitions_df = pd.DataFrame(tier_divider_finalized_definitions)
-#tier_divider_finalized_definitions_df.to_csv(tier_divider_finalized_definitions_csv, index=False)
 
 # ============================================================
 # Write extraction plan for surfacing
@@ -487,42 +371,27 @@ n_extraction_regions = len(extraction_rows)
 # Prepare dataset for surfacing and cleaning
 # ============================================================
 
-print()
-print("Segmentation is complete and the extraction plan has been created.")
+print_question_header("Surfacing Parameters: ISO Value", 2, TOTAL_QUESTIONS_03)
+
 print()
 print(
+    "Segmentation is complete and the extraction plan has been created.\n"
     "The next questions establish the dataset-specific surfacing settings\n"
     "that will be used by 04_surface.py."
 )
-
-# ============================================================
-# Set ISO value
-# ============================================================
-
-
 print()
-print("The first setting needed is the ISO value.")
-print()
-print("An isovalue (ISO) is required to surface the scans.")
-print(
-    "An isovalue (ISO) is the grayscale threshold used to "
-    "decide which voxels belong to the specimen and which "
-    "belong to the surrounding background."
-)
+
 print()
 print(
-    "Voxels brighter than the threshold are treated as material "
-    "and voxels darker than the threshold are treated as background "
+    "The first setting needed is the ISO value.\n"
+    "    - An isovalue (ISO) is the grayscale threshold used to \n"
+    "      decide which voxels belong to the specimen and which \n"
+    "      belong to the surrounding background.\n\n"
+    "    - Lower isovalues capture detail, but can also introduce more noise.\n\n"
+    "    - Higher isovalues reduce noise but can remove real specimen structure.\n\n"
 )
-print()
-print(
-    "Lower isovalues include more voxels and may capture additional specimen detail, "
-    "but can also introduce more noise. "
-    "Higher isovalues include fewer voxels and may reduce noise, "
-    "but can remove real specimen structure."
-)
-print()
 
+print()
 iso = ask(
     "What isovalue would you like to use for this surfacing run?",
     cast=float
@@ -531,14 +400,15 @@ iso = ask(
 # ============================================================
 # Set padding
 # ============================================================
+print_question_header("Surfacing Parameters: Padding", 3, TOTAL_QUESTIONS_03)
 
 print()
 padding = ask(
     "Padding adds a small margin around each extracted specimen box.\n"
-    "This helps avoid cutting off specimen edges if the extraction boundaries are slightly tight.\n"
-    "The unit is voxels.\n"
-    "Press Enter to use the recommended default of 5 voxels.\n"
-    "Enter a larger value to include more surrounding material, or a smaller value if you want tighter specimen crops.",
+    "This helps avoid cutting off specimen edges if the extraction boundaries are slightly tight.\n\n"
+    "Entering a larger value includes more surrounding material, whereas a smaller value produces tighter specimen crops.\n\n"
+    "What padding value would you like to use?\n"
+    "Press Enter to use the recommended default of 5 voxels.\n",
     default=5,
     cast=int
 )
@@ -547,23 +417,31 @@ padding = ask(
 # Ask for cleaning parameters
 # ============================================================
 
+print_question_header("Cleaning Parameters: Dust Cutoff", 4, TOTAL_QUESTIONS_03)
+
 print()
 print(
     "Now that we have set the surfacing parameters,\n"
-    "let's set a few cleaning parameters."
+    "let's set a few cleaning parameters.\n"
 )
 print()
 
 dust_cutoff = ask(
-    "Dust cutoff controls how small disconnected mesh fragments are removed.\n"
-    "The default is 20 vertices. Most users should press Enter.",
+    "Dust cutoff removes small disconnected mesh fragments.\n\n"
+    "The default is 20 vertices, meaning fragments with 20 vertices or fewer will be deleted.\n\n" 
+    "Enter a dust cutoff value or press Enter to accept the default.\n",
     default=20,
     cast=int
 )
 
+print_question_header("Cleaning Parameters: Hole Tolerance", 5, TOTAL_QUESTIONS_03)
+
 hole_tolerance = ask(
-    "Hole tolerance controls how many detected holes are allowed when selecting the main mesh component.\n"
-    "The default is 0. Most users should press Enter.",
+    "Hole tolerance helps identify the correct specimen during mesh cleaning.\n\n"
+    "It limits how many holes a specimen mesh may have\n"
+    "and still be selected during mesh cleaning.\n"
+    "Lower values are more strict.\n\n"
+    "Enter a hole tolerance value or press Enter to accept the default.",
     default=0,
     cast=int
 )
@@ -641,17 +519,18 @@ save_metadata(metadata_path, metadata)
 # ============================================================
 # Confirm completion
 # ============================================================
-print()
-print("Segmentation complete.")
-print("Metadata updated:")
-print(metadata_path)
-print()
 
+print_step_complete_header("Step 4 Complete")
+
+print("Segmentation complete.")
 print()
-print("Next step options:")
-print("1. Continue directly to 04_surface.py for a single dataset.")
-print("2. Stop here and manually start 04_surface.py later if you want to")
-print("   surface this dataset later or surface multiple datasets in a batch.")
+print(f"Setup took {format_runtime(runtime_03_seconds)} to complete.")
+print()
+print("Metadata updated:")
+print()
+print(f"    {metadata_path}")
+print()
+print("Important: Use this metadata JSON to continue the workflow later.")
 print()
 
 ask_run_next_step("04_surface.py", metadata_path)

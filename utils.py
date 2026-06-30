@@ -22,6 +22,8 @@ import multiprocessing
 import timeit
 import re
 import argparse
+import threading
+import psutil
 
 import numpy as np
 import pandas as pd
@@ -163,6 +165,145 @@ def format_runtime(seconds):
     hours = minutes / 60
     return f"{hours:.2f} hr"
 
+def choose_cpu_sample_interval(total_slice_gb):
+    """
+    Choose CPU diagnostic sampling interval from total input slice size.
+    """
+
+    if total_slice_gb <= 5:
+        return 5
+
+    if total_slice_gb <= 20:
+        return 10
+
+    if total_slice_gb <= 50:
+        return 30
+
+    return 60
+
+
+class CPUDiagnosticSampler:
+    """
+    Background CPU and memory sampler for 04_surface.py.
+    """
+
+    def __init__(
+        self,
+        csv_path,
+        requested_cores_by_phase,
+        total_specimens,
+        sample_interval_seconds,
+    ):
+        self.csv_path = csv_path
+        self.requested_cores_by_phase = requested_cores_by_phase
+        self.total_specimens = total_specimens
+        self.sample_interval_seconds = sample_interval_seconds
+
+        self.phase = "extract"
+        self.completed_specimens = 0
+
+        self.stop_event = threading.Event()
+        self.thread = None
+
+        self.columns = [
+            "timestamp",
+            "phase",
+            "requested_cores",
+            "running_python_processes",
+            "completed_specimens",
+            "total_specimens",
+            "effective_cpu_cores",
+            "cpu_percent",
+            "load_1min",
+            "load_5min",
+            "load_15min",
+            "available_memory_mb",
+            "sample_interval_seconds",
+        ]
+
+    def start(self):
+        pd.DataFrame(columns=self.columns).to_csv(
+            self.csv_path,
+            index=False
+        )
+
+        self.thread = threading.Thread(
+            target=self._sample_loop,
+            daemon=True,
+        )
+
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+
+        if self.thread is not None:
+            self.thread.join()
+
+    def set_phase(self, phase):
+        self.phase = phase
+        
+        if self.thread is not None and self.thread.is_alive():
+            self._write_sample()
+
+    def set_completed_specimens(self, completed_specimens):
+        self.completed_specimens = completed_specimens
+
+    def _sample_loop(self):
+        psutil.cpu_percent(interval=None)
+
+        while not self.stop_event.is_set():
+            self._write_sample()
+            self.stop_event.wait(self.sample_interval_seconds)
+
+    def _write_sample(self):
+        cpu_percent = psutil.cpu_percent(interval=None)
+
+        effective_cpu_cores = (
+            cpu_percent / 100.0
+        ) * multiprocessing.cpu_count()
+
+        load_1min, load_5min, load_15min = os.getloadavg()
+
+        available_memory_mb = (
+            psutil.virtual_memory().available / 1024 / 1024
+        )
+
+        running_python_processes = 0
+
+        for process in psutil.process_iter(["name"]):
+            try:
+                name = process.info["name"]
+
+                if name and "python" in name.lower():
+                    running_python_processes += 1
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        row = {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "phase": self.phase,
+            "requested_cores": self.requested_cores_by_phase.get(self.phase),
+            "running_python_processes": running_python_processes,
+            "completed_specimens": self.completed_specimens,
+            "total_specimens": self.total_specimens,
+            "effective_cpu_cores": round(effective_cpu_cores, 2),
+            "cpu_percent": round(cpu_percent, 1),
+            "load_1min": round(load_1min, 2),
+            "load_5min": round(load_5min, 2),
+            "load_15min": round(load_15min, 2),
+            "available_memory_mb": round(available_memory_mb, 1),
+            "sample_interval_seconds": self.sample_interval_seconds,
+        }
+
+        pd.DataFrame([row]).to_csv(
+            self.csv_path,
+            mode="a",
+            header=False,
+            index=False,
+        )
+
 def unpack_metadata(metadata):
     """
     Unpack canonical workflow metadata into local variables.
@@ -271,6 +412,10 @@ def unpack_metadata(metadata):
         rotation_angle=step01.get("rotation_angle"),
         rowrng=step01.get("rowrng"),
         colrng=step01.get("colrng"),
+        diagnostic_figures_path_01=step01.get("diagnostic_figures_path_01"),
+        representative_slice_raw_png=step01.get("representative_slice_raw_png"),
+        representative_slice_oriented_png=step01.get("representative_slice_oriented_png"),
+        representative_slice_cropped_png=step01.get("representative_slice_cropped_png"),
         zwindow=step01.get("zwindow"),
 
         # 02_build_subvolume
@@ -322,10 +467,15 @@ def unpack_metadata(metadata):
         # 04_surface
         status04=status04,
         
+        surface_run_timestamp=step04.get("surface_run_timestamp"),
+        
         mesh_folder=step04.get("mesh_folder"),
         clean_mesh_folder=step04.get("clean_mesh_folder"),
         surfacing_errors_csv=step04.get("surfacing_errors_csv"),
-        mesh_cleaning_log_csv=step04.get("mesh_cleaning_log_csv"),
+        mesh_cleaning_log_csv=step04.get("mesh_cleaning_log_csv"),    
+        specimen_intensity_ranges_csv=step04.get("specimen_intensity_ranges_csv"),
+        cpu_diagnostics_csv=step04.get("cpu_diagnostics_csv"),
+        cpu_sample_interval_seconds=step04.get("cpu_sample_interval_seconds"),
 
         n_specimens_extracted=step04.get("n_specimens_extracted"),
         n_meshes_generated=step04.get("n_meshes_generated"),
@@ -333,10 +483,10 @@ def unpack_metadata(metadata):
         n_input_meshes=step04.get("n_input_meshes"),
         n_meshes_cleaned=step04.get("n_meshes_cleaned"),
         n_mesh_cleaning_failures=step04.get("n_mesh_cleaning_failures"),
-
-        extraction=parallelization.get("extraction"),
-        surfacing=parallelization.get("surfacing"),
-        mesh_cleaning=parallelization.get("mesh_cleaning"),
+        
+        extract_requested_ncores=parallelization.get("extract_requested_ncores"),
+        surface_requested_ncores=parallelization.get("surface_requested_ncores"),
+        clean_requested_ncores=parallelization.get("clean_requested_ncores"),
         
         percentage_cores_extract=percentage_cores_extract, 
         cap_extract=cap_extract,
@@ -3703,7 +3853,12 @@ def clean_mesh_file(fname, input_mesh_folder, clean_mesh_folder, dust_cutoff, ho
     """Clean one mesh and return a log record describing the cleaning decision."""
 
     input_mesh_path = os.path.join(input_mesh_folder, fname)
-    output_mesh_path = os.path.join(clean_mesh_folder, fname)
+    cleaned_filename = fname.replace("_original_", "_cleaned_")
+
+    output_mesh_path = os.path.join(
+        clean_mesh_folder,
+        cleaned_filename
+    )
 
     record = {
         "mesh_filename": fname,
@@ -5360,6 +5515,40 @@ def _compute_tier_divider_evidence(
         "row_band_centers": row_band_centers,
         "col_band_centers": col_band_centers,
     }
+
+
+def _package_single_specimen_tier_result(
+    tier_id,
+    expected_layout,
+    normalized_image,
+    dataset_folder_name,
+    diagnostic_figures_path,
+):
+    """
+    Package divider results for a tier with one row and one column.
+
+    No internal divider detection or review is needed.
+    """
+
+    print()
+    print(f"Tier {tier_id} contains one row and one column.")
+    print("No internal divider review is needed.")
+    print()
+
+    return {
+        "tier_id": int(tier_id),
+        "expected_n_rows": expected_layout["n_rows"],
+        "expected_n_cols": expected_layout["n_cols"],
+        "proposed_rows": [],
+        "proposed_cols": [],
+        "final_rows": [],
+        "final_cols": [],
+        "review_choice": "skipped_single_cell",
+        "occupancy_profile_png": None,
+        "tier_divider_proposal_png": None,
+        "peak_diagnostic_rows": [],
+        "peak_diagnostic_cols": [],
+    }
     
 def review_tier_dividers(
     normalized_image,
@@ -5383,6 +5572,15 @@ def review_tier_dividers(
     """
     expected_n_rows = expected_layout["n_rows"]
     expected_n_cols = expected_layout["n_cols"]
+    
+    if expected_n_rows == 1 and expected_n_cols == 1:
+        return _package_single_specimen_tier_result(
+            tier_id=tier_id,
+            expected_layout=expected_layout,
+            normalized_image=normalized_image,
+            dataset_folder_name=dataset_folder_name,
+            diagnostic_figures_path=diagnostic_figures_path,
+        )
 
     evidence = _compute_tier_divider_evidence(
         normalized_image=normalized_image,
